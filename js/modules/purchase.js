@@ -73,8 +73,10 @@ function renderPurchaseModule() {
 
       <!-- ══ সাইড প্যানেল ══ -->
       <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden h-fit">
-        <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-          <h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> আজকের ক্রয়</h6>
+        <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center gap-2">
+          <h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> ক্রয় তালিকা</h6>
+          <input type="date" id="pur-list-date" value="${APP_STATE.purListDate || todayStr()}" onchange="onPurListDateChange(this.value)"
+            class="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
         </div>
         <div id="pur-today-list" class="max-h-96 overflow-y-auto"></div>
       </div>
@@ -401,13 +403,18 @@ function resetPurchase() {
 // ────────────────────────────────────────────────────────────
 // TODAY'S PURCHASE LIST
 // ────────────────────────────────────────────────────────────
+function onPurListDateChange(val) {
+  APP_STATE.purListDate = val || todayStr();
+  renderTodayPurchases();
+}
+
 function renderTodayPurchases() {
   const container = document.getElementById('pur-today-list');
   if (!container) return;
-  const today = todayStr();
-  const todayPur = APP_STATE.purchases.filter(p => p.date === today).slice().reverse();
+  const filterDate = APP_STATE.purListDate || todayStr();
+  const listPur = APP_STATE.purchases.filter(p => p.date === filterDate).slice().reverse();
 
-  container.innerHTML = todayPur.length ? todayPur.map(p => `
+  container.innerHTML = listPur.length ? listPur.map(p => `
     <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50">
       <div class="flex justify-between items-start">
         <div class="min-w-0">
@@ -421,5 +428,5 @@ function renderTodayPurchases() {
         </div>
       </div>
     </div>`).join('')
-    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-truck-field text-2xl opacity-30 mb-2 block"></i>আজ কোনো ক্রয় নেই</div>`;
+    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-truck-field text-2xl opacity-30 mb-2 block"></i>এই তারিখে কোনো ক্রয় নেই</div>`;
 }
