@@ -18,6 +18,7 @@ async function cget(ref) {
 // MEDICINE
 // ────────────────────────────────────────────────────────────
 async function apiAddMedicine(data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const id = data.id || ('MED-' + Date.now());
     await userCol('medicines').doc(id).set({
@@ -30,6 +31,7 @@ async function apiAddMedicine(data) {
 }
 
 async function apiUpdateMedicine(medId, data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const f = {};
     if (data.brand !== undefined) f.brand = data.brand;
@@ -46,6 +48,7 @@ async function apiUpdateMedicine(medId, data) {
 }
 
 async function apiDeleteMedicine(medId) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const invDoc = await cget(userCol('inventory').doc(medId));
     if (invDoc.exists && (invDoc.data().totalStock || 0) > 0) {
@@ -57,10 +60,12 @@ async function apiDeleteMedicine(medId) {
 }
 
 async function apiSetInventoryRow(medId, data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('inventory').doc(medId).set(data); return { success: true }; }
   catch (err) { return { success: false, message: err.message }; }
 }
 async function apiUpdateInventoryFields(medId, fields) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('inventory').doc(medId).update(fields); return { success: true }; }
   catch (err) { return { success: false, message: err.message }; }
 }
@@ -69,6 +74,7 @@ async function apiUpdateInventoryFields(medId, fields) {
 // CUSTOMER
 // ────────────────────────────────────────────────────────────
 async function apiAddCustomer(data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const ref = userCol('customers').doc(data.id);
     const existing = await cget(ref);
@@ -79,6 +85,7 @@ async function apiAddCustomer(data) {
 }
 
 async function apiUpdateCustomer(custId, data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const f = {};
     if (data.name !== undefined) f.name = data.name;
@@ -90,6 +97,7 @@ async function apiUpdateCustomer(custId, data) {
 }
 
 async function apiDeleteCustomer(custId) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const doc = await cget(userCol('customers').doc(custId));
     if (!doc.exists) return { success: false, message: 'গ্রাহক পাওয়া যায়নি।' };
@@ -100,6 +108,7 @@ async function apiDeleteCustomer(custId) {
 }
 
 async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amount, note, custData) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     if (amount > currentDue + 0.01) return { success: false, message: `বাকির (৳${fmt(currentDue)}) চেয়ে বেশি নেওয়া যাবে না।` };
     const custRef = userCol('customers').doc(custId);
@@ -111,11 +120,12 @@ async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amoun
     return { success: true, message: `৳${fmt(amount)} আদায় হয়েছে।` };
   } catch (err) { return { success: false, message: err.message }; }
 }
-
+const OFFLINE_MSG = 'ইন্টারনেট সংযোগ নেই — এই মুহূর্তে সংরক্ষণ করা যাবে না। সংযোগ ফিরলে আবার চেষ্টা করুন।';
 // ────────────────────────────────────────────────────────────
 // SUPPLIER
 // ────────────────────────────────────────────────────────────
 async function apiAddSupplier(data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const ref = userCol('suppliers').doc(data.id);
     const existing = await cget(ref);
@@ -126,6 +136,7 @@ async function apiAddSupplier(data) {
 }
 
 async function apiUpdateSupplier(supId, data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const f = {};
     if (data.name !== undefined) f.name = data.name;
@@ -137,6 +148,7 @@ async function apiUpdateSupplier(supId, data) {
 }
 
 async function apiDeleteSupplier(supId) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const doc = await cget(userCol('suppliers').doc(supId));
     if (doc.exists && (doc.data().totalPayable || 0) > 0) {
@@ -148,6 +160,7 @@ async function apiDeleteSupplier(supId) {
 }
 
 async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, amount, note, supData) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     if (amount > currentPayable + 0.01) return { success: false, message: `পাওনার (৳${fmt(currentPayable)}) চেয়ে বেশি দেওয়া যাবে না।` };
     const supRef = userCol('suppliers').doc(supId);
@@ -174,6 +187,7 @@ function computeFEFODeduction(invData, qty) {
 }
 
 async function apiSubmitSale(sale) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const invRefs = sale.items.map(item => userCol('inventory').doc(item.medId));
     const hasCustomer = sale.customerId && sale.customerId !== 'WALK_IN';
@@ -203,6 +217,7 @@ async function apiSubmitSale(sale) {
 }
 
 async function apiDeleteSale(sale) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const uniqueMedIds = [...new Set(sale.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
@@ -235,6 +250,7 @@ async function apiDeleteSale(sale) {
 // PURCHASE
 // ────────────────────────────────────────────────────────────
 async function apiSubmitPurchase(purchase) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const invRefs = purchase.items.map(item => userCol('inventory').doc(item.medId));
     const supRef = userCol('suppliers').doc(purchase.supplierId);
@@ -267,6 +283,7 @@ async function apiSubmitPurchase(purchase) {
 }
 
 async function apiDeletePurchase(purchase) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const invRefs = purchase.items.map(i => userCol('inventory').doc(i.medId));
     const invDocs = await Promise.all(invRefs.map(r => cget(r)));
@@ -297,6 +314,7 @@ async function apiDeletePurchase(purchase) {
 // RETURNS
 // ────────────────────────────────────────────────────────────
 async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const uniqueMedIds = [...new Set(returnDoc.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
@@ -326,6 +344,7 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
 }
 
 async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const uniqueMedIds = [...new Set(returnDoc.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
@@ -356,6 +375,7 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
 }
 
 async function apiDeleteReturn(ret) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const uniqueMedIds = [...new Set(ret.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
@@ -391,19 +411,23 @@ async function apiDeleteReturn(ret) {
 // EXPENSE / SETTINGS / OPENING BALANCE
 // ────────────────────────────────────────────────────────────
 async function apiAddExpense(exp) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('expenses').doc(exp.id).set(exp); return { success: true }; }
   catch (err) { return { success: false, message: err.message }; }
 }
 async function apiDeleteExpense(expId) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('expenses').doc(expId).delete(); return { success: true }; }
   catch (err) { return { success: false, message: err.message }; }
 }
 async function apiSaveSettings(data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('config').doc('settings').set(data, { merge: true }); return { success: true }; }
   catch (err) { return { success: false, message: err.message }; }
 }
 
 async function apiSubmitOpeningEntry(entry) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const batch = fbDb.batch();
     batch.set(userCol('openingEntries').doc(entry.entryId), entry);
@@ -430,6 +454,7 @@ async function apiSubmitOpeningEntry(entry) {
 }
 
 async function apiDeleteOpeningEntry(entry) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const batch = fbDb.batch();
     batch.delete(userCol('openingEntries').doc(entry.entryId));
