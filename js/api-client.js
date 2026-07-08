@@ -253,6 +253,7 @@ async function apiSubmitPurchase(purchase) {
         expiry: item.expiryDate || '', stock: item.qty,
         cost: item.purchasePrice, mrp: item.mrp, sell: item.sellPrice || 0,
       };
+      item.batchId = newBatch.batchId; // ✅ delete-এর সময় সঠিক ব্যাচ খুঁজে বের করতে
       const existing = invDoc.exists ? invDoc.data() : null;
       const batches = [...(existing?.batches || []), newBatch]
         .sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
