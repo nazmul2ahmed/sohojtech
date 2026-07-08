@@ -425,8 +425,32 @@ function renderTodayPurchases() {
         <div class="text-right flex-shrink-0">
           <div class="font-mono font-bold text-sm text-slate-800 dark:text-white">৳${fmt(p.totalCost)}</div>
           <span class="text-[11px] font-semibold ${p.paymentType === 'বাকি' ? 'text-amber-500' : 'text-emerald-500'}">${esc(p.paymentType)}</span>
+          <button onclick="deletePurchaseConfirm('${p.purchaseId}')" class="text-red-400 hover:text-red-600 text-xs mt-1">
+            <i class="fa-solid fa-trash"></i>
+          </button>
         </div>
       </div>
     </div>`).join('')
     : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-truck-field text-2xl opacity-30 mb-2 block"></i>এই তারিখে কোনো ক্রয় নেই</div>`;
+}
+
+// ────────────────────────────────────────────────────────────
+// DELETE PURCHASE
+// ────────────────────────────────────────────────────────────
+async function deletePurchaseConfirm(purchaseId) {
+  const pur = APP_STATE.purchases.find(p => p.purchaseId === purchaseId);
+  if (!pur || !confirm(`"${purchaseId}" মুছবেন? স্টক/পাওনা ফেরত হবে।`)) return;
+  try {
+    const res = await apiDeletePurchase(pur);
+    if (!res.success) return toast(res.message, 'w');
+    pur.items.forEach(item => {
+      const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
+      if (inv) { inv.batches = inv.batches.filter(b => b.batchId !== item.batchId); recalcInventoryRow(inv); }
+    });
+    const sup = APP_STATE.suppliers.find(s => s.id === pur.supplierId);
+    if (sup) { if (pur.paymentType === 'বাকি') sup.totalPayable = Math.max(0, round2(sup.totalPayable - pur.totalCost)); else sup.totalPaid = Math.max(0, round2(sup.totalPaid - pur.totalCost)); }
+    APP_STATE.purchases = APP_STATE.purchases.filter(p => p.purchaseId !== purchaseId);
+    toast(res.message, 's');
+    renderTodayPurchases();
+  } catch (err) { showFatalError('ক্রয় মুছতে সমস্যা:\n' + err.message); }
 }
