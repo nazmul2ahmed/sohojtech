@@ -333,6 +333,31 @@ function renderTodayReturns() {
         <div class="text-sm font-semibold truncate">${esc(r.refName)} <span class="text-[11px] text-slate-400">(${r.returnType === 'customer' ? 'কাস্টমার' : (r.reason === 'ধ্বংস' ? 'রাইট-অফ' : 'সাপ্লায়ার')})</span></div>
         <div class="text-[11px] text-slate-400">${esc(r.refId)}</div>
       </div>
-      <span class="font-mono font-bold text-sm ${r.returnType === 'customer' ? 'text-red-500' : r.reason === 'ধ্বংস' ? 'text-red-600' : 'text-amber-600'}">৳${fmt(r.amount)}</span>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <span class="font-mono font-bold text-sm ${r.returnType === 'customer' ? 'text-red-500' : r.reason === 'ধ্বংস' ? 'text-red-600' : 'text-amber-600'}">৳${fmt(r.amount)}</span>
+        <button onclick="deleteReturnConfirm('${r.returnId}')" class="text-red-400 hover:text-red-600 text-xs"><i class="fa-solid fa-trash"></i></button>
+      </div>
     </div>`).join('') : `<div class="px-4 py-8 text-center text-slate-400 text-sm">এই তারিখে কোনো রিটার্ন নেই</div>`;
+}
+
+// ────────────────────────────────────────────────────────────
+// DELETE RETURN
+// ────────────────────────────────────────────────────────────
+async function deleteReturnConfirm(returnId) {
+  const ret = APP_STATE.returns.find(r => r.returnId === returnId);
+  if (!ret || !confirm('এই রিটার্ন মুছবেন? প্রভাব উল্টানো হবে।')) return;
+  try {
+    const res = await apiDeleteReturn(ret);
+    if (!res.success) return toast(res.message, 'w');
+    if (ret.returnType === 'customer') {
+      ret.items.forEach(item => destockItem(item.medId, item.qty));
+      if (ret.refundMethod === 'বাকি সমন্বয়') { const c = APP_STATE.customers.find(x => x.id === ret.partyId); if (c) c.due = round2(c.due + ret.amount); }
+    } else {
+      ret.items.forEach(item => restockItem(item.medId, item.qty, item.purchasePrice));
+      if (ret.reason === 'ফেরত' && ret.refundMethod === 'পাওনা সমন্বয়') { const s = APP_STATE.suppliers.find(x => x.id === ret.partyId); if (s) s.totalPayable = round2(s.totalPayable + ret.amount); }
+    }
+    APP_STATE.returns = APP_STATE.returns.filter(r => r.returnId !== returnId);
+    toast(res.message, 's');
+    renderTodayReturns();
+  } catch (err) { showFatalError('রিটার্ন মুছতে সমস্যা:\n' + err.message); }
 }
