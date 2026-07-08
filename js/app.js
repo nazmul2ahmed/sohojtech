@@ -5,10 +5,23 @@ document.addEventListener('DOMContentLoaded', () => {
   applyStoredTheme();
   initAuthGate();   // ← বদলানো হলো (আগে ছিল initApp())
 });
+window.addEventListener('online', () => { updateConnBadge(true); toast('ইন্টারনেট সংযোগ ফিরেছে।', 's'); });
+window.addEventListener('offline', () => { updateConnBadge(false); toast('অফলাইন — নতুন এন্ট্রি সাময়িক বন্ধ থাকবে।', 'w'); });
+
+function updateConnBadge(isOnline) {
+  const badge = document.getElementById('conn-status-badge');
+  if (!badge) return;
+  badge.innerHTML = isOnline
+    ? '<i class="fa-solid fa-circle me-1"></i>সংযুক্ত'
+    : '<i class="fa-solid fa-circle me-1"></i>অফলাইন';
+  badge.className = isOnline
+    ? 'hidden sm:inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-full px-3 py-1 text-xs font-semibold'
+    : 'hidden sm:inline-flex items-center gap-1.5 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-full px-3 py-1 text-xs font-semibold';
+}
 
 async function initApp() {
   setLoadingMessage('ডেটা লোড হচ্ছে...');
-
+  updateConnBadge(navigator.onLine);
   try {
     const data = await apiGetCompleteData();
     if (!data.success) {
