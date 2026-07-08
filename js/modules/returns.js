@@ -12,7 +12,11 @@ function renderReturnsModule() {
     <div id="ret-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-3 py-2 mb-3"></div>
     <div id="ret-form"></div>
     <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden mt-4">
-      <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700"><h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> আজকের রিটার্ন</h6></div>
+      <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center gap-2">
+  <h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> রিটার্ন তালিকা</h6>
+  <input type="date" id="ret-list-date" value="${APP_STATE.retListDate || todayStr()}" onchange="onRetListDateChange(this.value)"
+    class="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+</div>
       <div id="ret-today-list" class="max-h-72 overflow-y-auto"></div>
     </div>`;
   updateRetTabsUI();
@@ -314,10 +318,15 @@ function recalcInventoryRow(inv) {
 
 function showRetError(msg) { const el = document.getElementById('ret-error'); el.textContent = msg; el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 5000); }
 
+function onRetListDateChange(val) {
+  APP_STATE.retListDate = val || todayStr();
+  renderTodayReturns();
+}
+
 function renderTodayReturns() {
   const box = document.getElementById('ret-today-list');
-  const today = todayStr();
-  const list = APP_STATE.returns.filter(r => r.date === today).slice().reverse();
+  const filterDate = APP_STATE.retListDate || todayStr();
+  const list = APP_STATE.returns.filter(r => r.date === filterDate).slice().reverse();
   box.innerHTML = list.length ? list.map(r => `
     <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center">
       <div class="min-w-0">
@@ -325,5 +334,5 @@ function renderTodayReturns() {
         <div class="text-[11px] text-slate-400">${esc(r.refId)}</div>
       </div>
       <span class="font-mono font-bold text-sm ${r.returnType === 'customer' ? 'text-red-500' : r.reason === 'ধ্বংস' ? 'text-red-600' : 'text-amber-600'}">৳${fmt(r.amount)}</span>
-    </div>`).join('') : `<div class="px-4 py-8 text-center text-slate-400 text-sm">আজ কোনো রিটার্ন নেই</div>`;
+    </div>`).join('') : `<div class="px-4 py-8 text-center text-slate-400 text-sm">এই তারিখে কোনো রিটার্ন নেই</div>`;
 }
