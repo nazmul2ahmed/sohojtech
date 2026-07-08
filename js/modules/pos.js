@@ -80,8 +80,10 @@ function renderPOSModule() {
         </div>
 
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-          <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-            <h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> আজকের বিক্রয়</h6>
+          <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+            <h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> বিক্রয় তালিকা</h6>
+            <input type="date" id="pos-list-date" value="${APP_STATE.posListDate || todayStr()}" onchange="onPOSListDateChange(this.value)"
+              class="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
           </div>
           <div id="pos-today-sales" class="max-h-72 overflow-y-auto"></div>
         </div>
@@ -409,13 +411,18 @@ function deductStockFEFO(medId, qty) {
 // ────────────────────────────────────────────────────────────
 // TODAY'S SALES LIST
 // ────────────────────────────────────────────────────────────
+function onPOSListDateChange(val) {
+  APP_STATE.posListDate = val || todayStr();
+  renderTodayPOSSales();
+}
+
 function renderTodayPOSSales() {
   const container = document.getElementById('pos-today-sales');
   if (!container) return;
-  const today = todayStr();
-  const todaySales = APP_STATE.sales.filter(s => s.date === today).slice().reverse();
+  const filterDate = APP_STATE.posListDate || todayStr();
+  const listSales = APP_STATE.sales.filter(s => s.date === filterDate).slice().reverse();
 
-  container.innerHTML = todaySales.length ? todaySales.map(s => `
+  container.innerHTML = listSales.length ? listSales.map(s => `
     <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50">
       <div class="flex justify-between items-start">
         <div class="min-w-0">
@@ -428,7 +435,7 @@ function renderTodayPOSSales() {
         </div>
       </div>
     </div>`).join('')
-    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-receipt text-2xl opacity-30 mb-2 block"></i>আজ কোনো বিক্রয় নেই</div>`;
+    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-receipt text-2xl opacity-30 mb-2 block"></i>এই তারিখে কোনো বিক্রয় নেই</div>`;
 }
 
 function hideEl(id) { document.getElementById(id)?.classList.add('hidden'); }
