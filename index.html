@@ -191,7 +191,6 @@
 <script src="js/utils.js"></script>
 <script src="js/state.js"></script>
 <script src="js/ui-components.js"></script>
-<script src="js/mock-data.js"></script>
 <script src="js/modules/dashboard.js"></script>
 <script src="js/modules/pos.js"></script>
 <script src="js/modules/purchase.js"></script>
@@ -210,7 +209,9 @@
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('service-worker.js').catch(console.warn);
+      navigator.serviceWorker.register('service-worker.js')
+        .then(() => toast('অফলাইন মোড সক্রিয় হয়েছে।', 's'))
+        .catch((err) => showFatalError('Service Worker রেজিস্ট্রেশন ব্যর্থ:\n' + err.message));
     });
   }
 </script>
