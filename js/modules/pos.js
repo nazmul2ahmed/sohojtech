@@ -15,7 +15,6 @@ function renderPOSModule() {
 
   container.innerHTML = `
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <!-- ══ বিলিং ফর্ম ══ -->
       <div class="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
         <div class="flex items-center justify-between mb-4">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
@@ -68,7 +67,6 @@ function renderPOSModule() {
         </button>
       </div>
 
-      <!-- ══ সাইড প্যানেল ══ -->
       <div class="space-y-4">
         <div class="bg-[#0D1B2A] rounded-xl p-5 text-white">
           <h6 class="text-[11px] uppercase tracking-wider text-white/40 mb-3">বিল সারসংক্ষেপ</h6>
@@ -357,7 +355,6 @@ async function submitPOSSale() {
     toast(res.message, 's');
     resetPOS();
     renderTodayPOSSales();
-    // ✅ ফিক্স: সফল হওয়ার পরও বাটন স্বাভাবিক অবস্থায় ফেরানো হচ্ছে (আগে এই লাইন মিসিং ছিল)
     btn.disabled = false;
     btn.innerHTML = idleHTML;
   } catch (err) {
@@ -432,6 +429,7 @@ function renderTodayPOSSales() {
         <div class="text-right flex-shrink-0">
           <div class="font-mono font-bold text-sm text-slate-800 dark:text-white">৳${fmt(s.totalBill)}</div>
           ${s.due > 0 ? `<span class="text-[11px] text-red-500 font-semibold">বাকি ৳${fmt(s.due)}</span>` : `<span class="text-[11px] text-emerald-500 font-semibold">পরিশোধিত</span>`}
+          <button onclick="deleteSaleConfirm('${s.invoiceNo}')" class="text-red-400 hover:text-red-600 text-xs mt-1 block ml-auto"><i class="fa-solid fa-trash"></i></button>
         </div>
       </div>
     </div>`).join('')
@@ -439,3 +437,20 @@ function renderTodayPOSSales() {
 }
 
 function hideEl(id) { document.getElementById(id)?.classList.add('hidden'); }
+
+async function deleteSaleConfirm(invoiceNo) {
+  const sale = APP_STATE.sales.find(s => s.invoiceNo === invoiceNo);
+  if (!sale || !confirm(`"${invoiceNo}" মুছবেন? স্টক ও বাকি ফেরত হবে।`)) return;
+  try {
+    const res = await apiDeleteSale(sale);
+    if (!res.success) return toast(res.message, 'w');
+    sale.items.forEach(item => restockItem(item.medId, item.qty, item.costPrice));
+    if (sale.customerId !== 'WALK_IN') {
+      const c = APP_STATE.customers.find(x => x.id === sale.customerId);
+      if (c) { c.due = Math.max(0, round2(c.due - sale.due)); c.totalPaid = Math.max(0, round2(c.totalPaid - sale.cashPaid)); }
+    }
+    APP_STATE.sales = APP_STATE.sales.filter(s => s.invoiceNo !== invoiceNo);
+    toast(res.message, 's');
+    renderTodayPOSSales();
+  } catch (err) { showFatalError('বিক্রয় মুছতে সমস্যা:\n' + err.message); }
+}
