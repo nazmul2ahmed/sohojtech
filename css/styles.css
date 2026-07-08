@@ -1,0 +1,27 @@
+:root {
+  --shadow-sm: 0 2px 8px rgba(13,27,42,.07);
+  --shadow-md: 0 4px 20px rgba(13,27,42,.12);
+  --transition: all .2s ease;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.tab-enter { animation: fadeIn .25s ease; }
+
+#app-loading.hide {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Keyboard-focus visibility — POS স্ক্রিনে দরকার হবে (Phase A) */
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid #1A6EBD;
+  outline-offset: 1px;
+}
