@@ -4,7 +4,15 @@ function userCol(name) {
   return fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection(name);
 }
 // ✅ সব internal read এখন cache থেকে — অফলাইনে হ্যাং হবে না, অনলাইনেও দ্রুত হবে
-function cget(ref) { return ref.get({ source: 'cache' }); }
+async function cget(ref) {
+  try {
+    return await ref.get({ source: 'cache' });
+  } catch (e) {
+    // ✅ নতুন ব্রাউজার/ডিভাইসে cache খালি থাকলে (প্রথম লগইন) ডকুমেন্ট cache-এ
+    // এখনো sync না হওয়ায় এই read throw করে — তখন server থেকে fallback নেয়।
+    return ref.get();
+  }
+}
 
 // ────────────────────────────────────────────────────────────
 // MEDICINE
