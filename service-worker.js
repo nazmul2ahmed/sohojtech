@@ -1,12 +1,6 @@
 'use strict';
 
-// ════════════════════════════════════════════════════════════
-// SERVICE WORKER — app-shell cache (install-ability + offline load)
-// Firestore ডেটা-সিঙ্ক এখানে হ্যান্ডেল হয় না — সেটা enablePersistence()
-// নিজেই সামলায়। এই SW শুধু static file (HTML/CSS/JS/icons) cache করে।
-// ════════════════════════════════════════════════════════════
-
-const CACHE_NAME = 'sohojtech-shell-v1'; // ভবিষ্যতে ফাইল বদলালে ভার্সন বাড়ান (v2, v3...)
+const CACHE_NAME = 'sohojtech-shell-v2'; // ভার্সন বাড়ানো হলো — পুরনো ব্যর্থ ইনস্টল রিসেট করতে
 
 const PRECACHE_URLS = [
   './', './index.html', './manifest.json', './css/styles.css',
@@ -21,7 +15,12 @@ const PRECACHE_URLS = [
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) =>
+      // ✅ ফিক্স: addAll() এর বদলে একে একে — একটা ফাইল 404 হলেও বাকিগুলো cache হবে
+      Promise.all(PRECACHE_URLS.map((url) =>
+        cache.add(url).catch((err) => console.warn('SW precache failed:', url, err))
+      ))
+    ).then(() => self.skipWaiting())
   );
 });
 
@@ -33,8 +32,6 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// শুধু same-origin GET রিকোয়েস্ট cache করি — Firebase/Firestore-এর নিজস্ব
-// ডোমেইনে (googleapis.com ইত্যাদি) কিছুই ছুঁই না, ওটা SDK নিজে সামলায়
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
