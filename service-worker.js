@@ -2,23 +2,6 @@
 
 const CACHE_NAME = 'sohojtech-shell-v3'; // ভার্সন বাড়ানো — নতুন strategy কার্যকর করতে
 
-self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
-  const url = new URL(e.request.url);
-  if (url.origin !== self.location.origin) return;
-
-  // ✅ Network-First: অনলাইনে সবসময় সর্বশেষ ফাইল, অফলাইনে cache fallback
-  e.respondWith(
-    fetch(e.request).then((res) => {
-      if (res.ok) {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-      }
-      return res;
-    }).catch(() => caches.match(e.request))
-  );
-});
-
 const PRECACHE_URLS = [
   './', './index.html', './manifest.json', './css/styles.css',
   './js/config.js', './js/utils.js', './js/state.js', './js/ui-components.js',
@@ -49,21 +32,19 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// ✅ Network-First: অনলাইনে সবসময় সর্বশেষ ফাইল, অফলাইনে cache fallback
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
 
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(e.request).then((res) => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-        }
-        return res;
-      }).catch(() => cached);
-    })
+    fetch(e.request).then((res) => {
+      if (res.ok) {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+      }
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
