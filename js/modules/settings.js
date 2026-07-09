@@ -55,8 +55,24 @@ function renderSettingsModule() {
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 opacity-60">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2"><i class="fa-solid fa-cloud text-slate-400"></i> অফলাইন সিঙ্ক স্ট্যাটাস</h5>
           <div class="flex items-center gap-2 text-xs text-slate-400">
-            <span class="w-2 h-2 rounded-full bg-slate-300"></span> নিষ্ক্রিয় (Phase E-তে সক্রিয় হবে)
+            <span class="w-2 h-2 rounded-full bg-slate-300"></span> নিষ্ক্রিয়
           </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-file-export text-brand mr-1"></i> ডেটা এক্সপোর্ট</h5>
+          <button onclick="exportToExcel()" class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm mb-2">
+            <i class="fa-solid fa-download mr-1"></i> Excel-এ ডাউনলোড করুন
+          </button>
+          <p class="text-[11px] text-slate-400">সব ডেটা একটা .xlsx ফাইলে (প্রতিটা টেবিল আলাদা শিটে)।</p>
+        </div>
+
+        <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-5">
+          <h5 class="text-sm font-semibold text-red-600 mb-3"><i class="fa-solid fa-trash-can mr-1"></i> সম্পূর্ণ রিসেট</h5>
+          <p class="text-[11px] text-slate-500 mb-3">প্র্যাকটিস ডেটা মুছে নতুন করে শুরু করতে চাইলে।</p>
+          <button onclick="openResetConfirm()" class="w-full border border-red-300 text-red-600 hover:bg-red-50 font-semibold py-2 rounded-lg text-sm">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i> সব ডেটা মুছুন
+          </button>
         </div>
 
         <div class="bg-brand/5 border border-brand/20 rounded-xl p-5">
@@ -115,4 +131,59 @@ async function saveSettingsForm() {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> সংরক্ষণ করুন';
   }
+}
+function exportToExcel() {
+  const wb = XLSX.utils.book_new();
+  const sheets = {
+    'Medicines': APP_STATE.medicines,
+    'Inventory': APP_STATE.inventory.map(i => ({ medId: i.medId, brand: i.brand, doseForm: i.doseForm, strength: i.strength, totalStock: i.totalStock, costValue: i.costValue, mrpValue: i.mrpValue, sellPrice: i.sellPrice, nearestExpiry: i.nearestExpiry, status: i.status })),
+    'Customers': APP_STATE.customers,
+    'Suppliers': APP_STATE.suppliers,
+    'Sales': APP_STATE.sales.map(s => ({ invoiceNo: s.invoiceNo, date: s.date, customerName: s.customerName, totalBill: s.totalBill, cashPaid: s.cashPaid, due: s.due, type: s.type, items: JSON.stringify(s.items) })),
+    'Purchases': APP_STATE.purchases.map(p => ({ purchaseId: p.purchaseId, date: p.date, supplierName: p.supplierName, totalCost: p.totalCost, paymentType: p.paymentType, items: JSON.stringify(p.items) })),
+    'Returns': APP_STATE.returns.map(r => ({ returnId: r.returnId, date: r.date, returnType: r.returnType, refId: r.refId, refName: r.refName, amount: r.amount, reason: r.reason || '', refundMethod: r.refundMethod || '' })),
+    'Expenses': APP_STATE.expenses,
+    'Payments': APP_STATE.payments,
+    'SupplierPayments': APP_STATE.supplierPayments,
+    'OpeningEntries': APP_STATE.openingEntries,
+  };
+  Object.entries(sheets).forEach(([name, data]) => {
+    const ws = XLSX.utils.json_to_sheet(data.length ? data : [{}]);
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  });
+  XLSX.writeFile(wb, `${APP_STATE.pharmacyName || 'pharmacy'}_${todayStr()}.xlsx`);
+  toast('Excel ফাইল ডাউনলোড হয়েছে।', 's');
+}
+
+function openResetConfirm() {
+  const modal = document.createElement('div');
+  modal.id = 'reset-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-sm w-full">
+      <h4 class="font-bold text-red-600 mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i> সম্পূর্ণ রিসেট</h4>
+      <p class="text-sm text-slate-500 mb-3">এটা সব ওষুধ, বিক্রয়, ক্রয়, গ্রাহক — সব মুছে ফেলবে। এই কাজ <b>ফিরিয়ে আনা যাবে না</b>। আগে Export করে নিন।</p>
+      <p class="text-xs text-slate-400 mb-2">নিশ্চিত করতে নিচে <b>RESET</b> লিখুন:</p>
+      <input type="text" id="reset-confirm-input" class="w-full px-3 py-2 text-sm border border-red-300 rounded-lg mb-3 bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+      <div class="flex gap-2">
+        <button id="reset-confirm-btn" onclick="confirmReset()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg text-sm">মুছে ফেলুন</button>
+        <button onclick="document.getElementById('reset-modal').remove()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function confirmReset() {
+  if (document.getElementById('reset-confirm-input').value.trim() !== 'RESET') {
+    toast('ঠিক করে "RESET" লিখুন।', 'w'); return;
+  }
+  const btn = document.getElementById('reset-confirm-btn');
+  btn.disabled = true; btn.textContent = 'মুছা হচ্ছে...';
+  try {
+    const res = await apiResetAllData();
+    if (!res.success) { toast(res.message, 'w'); btn.disabled = false; btn.textContent = 'মুছে ফেলুন'; return; }
+    document.getElementById('reset-modal').remove();
+    toast('সব ডেটা মুছে ফেলা হয়েছে। রিলোড হচ্ছে...', 's');
+    setTimeout(() => location.reload(), 1200);
+  } catch (err) { showFatalError('রিসেট করতে সমস্যা:\n' + err.message); }
 }
