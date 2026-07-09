@@ -7,6 +7,8 @@
 // ✅ Keyboard flow: Enter = আইটেম যোগ, Ctrl+Enter = চেকআউট।
 // ✅ Firestore রিওয়্যার: submitPOSSale() এখন apiSubmitSale() কল করে,
 //    সফল হলেই APP_STATE-এ optimistic আপডেট হয় (আগে উল্টো ছিল)।
+// ✅ Tab-switch persistence: গ্রাহক, তারিখ, নগদ ও আইটেম এখন APP_STATE-এ
+//    ধরে রাখা হয়, tab পাল্টালে হারায় না।
 // ════════════════════════════════════════════════════════════
 
 function renderPOSModule() {
@@ -34,7 +36,7 @@ function renderPOSModule() {
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">তারিখ</label>
-            <input type="date" id="pos-date" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
+            <input type="date" id="pos-date" onchange="APP_STATE.posDate=this.value" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
           </div>
         </div>
 
@@ -90,9 +92,12 @@ function renderPOSModule() {
   `;
 
   initPOSCustomerDropdown();
-  document.getElementById('pos-date').value = todayStr();
-  APP_STATE.posItems = [];
-  addPOSItem();
+  document.getElementById('pos-date').value = APP_STATE.posDate || todayStr();
+  if (!APP_STATE.posItems || !APP_STATE.posItems.length) { APP_STATE.posItems = []; addPOSItem(); }
+  else { renderPOSItems(); }
+  if (APP_STATE.posCashPaid !== null && APP_STATE.posCashPaid !== undefined) {
+    document.getElementById('pos-cash').value = APP_STATE.posCashPaid;
+  }
   calcPOSTotals();
   renderTodayPOSSales();
 
@@ -109,8 +114,12 @@ function initPOSCustomerDropdown() {
     sub: (c.phone || '') + (c.due > 0 ? ` • বাকি: ৳${fmt(c.due)}` : ''),
     badge: c.due > 0 ? `৳${fmt(c.due)}` : null, badgeClass: 'bg-red-50 text-red-600',
   }));
-  createSD('sd-pos-customer', opts, () => {}, '— গ্রাহক খুঁজুন —');
-  sdSelect('sd-pos-customer', 'WALK_IN', 'নগদ গ্রাহক (Walk-In)');
+  createSD('sd-pos-customer', opts, (v) => { APP_STATE.posCustomerId = v; }, '— গ্রাহক খুঁজুন —');
+  let selectedId = APP_STATE.posCustomerId || 'WALK_IN';
+  let matchedOpt = opts.find(o => o.value === selectedId);
+  if (!matchedOpt) { selectedId = 'WALK_IN'; matchedOpt = opts[0]; }
+  APP_STATE.posCustomerId = selectedId;
+  sdSelect('sd-pos-customer', matchedOpt.value, matchedOpt.label);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -291,8 +300,10 @@ function calcPOSTotals() {
 
 function onPOSCashChange() {
   const total = parseFloat(document.getElementById('pos-total').value) || 0;
-  const cash = parseFloat(document.getElementById('pos-cash').value) || 0;
+  const rawCash = parseFloat(document.getElementById('pos-cash').value) || 0;
+  const cash = Math.max(0, rawCash);
   const due = Math.max(0, round2(total - cash));
+  APP_STATE.posCashPaid = cash;
   document.getElementById('pos-due').value = due.toFixed(2);
   setText('bs-cash', '৳' + fmt(cash));
   setText('bs-due', '৳' + fmt(due));
@@ -372,6 +383,7 @@ function showPOSError(msg) {
 }
 
 function resetPOS() {
+  APP_STATE.posDate = null; APP_STATE.posCashPaid = null; APP_STATE.posCustomerId = null;
   APP_STATE.posItems = [];
   sdClear('sd-pos-customer');
   sdSelect('sd-pos-customer', 'WALK_IN', 'নগদ গ্রাহক (Walk-In)');
