@@ -6,6 +6,8 @@
 // ✅ ফিক্স: sellPrice সরাসরি Inventory-তে রিফ্লেক্ট হয়।
 // ✅ Firestore রিওয়্যার: submitPurchase() এখন apiSubmitPurchase() কল করে,
 //    সফল হলেই APP_STATE-এ optimistic আপডেট হয়।
+// ✅ Tab-switch persistence: সরবরাহকারী, তারিখ, পেমেন্ট টাইপ ও আইটেম এখন
+//    APP_STATE-এ ধরে রাখা হয়, tab পাল্টালে হারায় না।
 // ════════════════════════════════════════════════════════════
 
 function renderPurchaseModule() {
@@ -34,7 +36,7 @@ function renderPurchaseModule() {
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">তারিখ</label>
-            <input type="date" id="pur-date" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
+            <input type="date" id="pur-date" onchange="APP_STATE.purDate=this.value" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
           </div>
         </div>
 
@@ -84,10 +86,10 @@ function renderPurchaseModule() {
   `;
 
   initPurSupplierDropdown();
-  document.getElementById('pur-date').value = todayStr();
-  APP_STATE.purItems = [];
-  APP_STATE.purPayType = 'নগদ';
-  addPurchaseItem();
+  document.getElementById('pur-date').value = APP_STATE.purDate || todayStr();
+  if (!APP_STATE.purItems || !APP_STATE.purItems.length) { APP_STATE.purItems = []; addPurchaseItem(); }
+  else { renderPurItems(); }
+  if (!APP_STATE.purPayType) APP_STATE.purPayType = 'নগদ';
   updatePurPayTypeUI();
   calcPurTotal();
   renderTodayPurchases();
@@ -104,7 +106,12 @@ function initPurSupplierDropdown() {
     badge: s.totalPayable > 0 ? `বাকি ৳${fmt(s.totalPayable)}` : null,
     badgeClass: 'bg-amber-50 text-amber-600',
   }));
-  createSD('sd-pur-supplier', opts, () => {}, '— সরবরাহকারী খুঁজুন —');
+  createSD('sd-pur-supplier', opts, (v) => { APP_STATE.purSupplierId = v; }, '— সরবরাহকারী খুঁজুন —');
+  if (APP_STATE.purSupplierId) {
+    const matched = opts.find(o => o.value === APP_STATE.purSupplierId);
+    if (matched) sdSelect('sd-pur-supplier', matched.value, matched.label);
+    else APP_STATE.purSupplierId = null;
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -393,9 +400,11 @@ function showPurError(msg) {
 }
 
 function resetPurchase() {
+  APP_STATE.purDate = null; APP_STATE.purSupplierId = null; APP_STATE.purPayType = 'নগদ';
   APP_STATE.purItems = [];
   sdClear('sd-pur-supplier');
   addPurchaseItem();
+  updatePurPayTypeUI();
   calcPurTotal();
   setTimeout(() => focusPurMedicineInput(0), 50);
 }
