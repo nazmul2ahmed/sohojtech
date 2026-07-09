@@ -489,7 +489,7 @@ async function apiGetCompleteData() {
       cget2(userCol('medicines')), cget2(userCol('customers')), cget2(userCol('suppliers')), cget2(userCol('inventory')),
       cget2(userCol('sales')), cget2(userCol('purchases')), cget2(userCol('returns')), cget2(userCol('expenses')),
       cget2(userCol('payments')), cget2(userCol('supplierPayments')), cget2(userCol('openingEntries')),
-      cget(userCol('config').doc('settings')),
+      cgetDoc(userCol('config').doc('settings')),
     ]);
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
     return {
@@ -514,4 +514,8 @@ async function cget2(colRef) {
     if (!snap.empty) return snap;
     return colRef.get();
   } catch (e) { return colRef.get(); }
+}
+async function cgetDoc(ref) {
+  try { return await ref.get({ source: 'cache' }); }
+  catch (e) { return ref.get(); }
 }
