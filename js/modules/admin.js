@@ -1,47 +1,93 @@
 'use strict';
 
-// ════════════════════════════════════════════════════════════
-// ADMIN PANEL — শুধু ADMIN_EMAIL-এর জন্য দৃশ্যমান।
-// Firestore users কালেকশন রিয়েল-টাইম শোনে, Approve/Revoke করে।
-// ════════════════════════════════════════════════════════════
-
 let adminUsersUnsub = null;
+const SUB_DURATIONS = [{ label: '১ মাস', days: 30 }, { label: '৩ মাস', days: 90 }, { label: '৬ মাস', days: 180 }, { label: '১ বছর', days: 365 }];
 
 function renderAdminModule() {
   const c = document.getElementById('admin-content');
   if (!c) return;
-
   if (!APP_STATE.isAdmin) {
-    c.innerHTML = `<div class="bg-white dark:bg-slate-800 rounded-xl p-8 text-center text-slate-400">
-      <i class="fa-solid fa-lock text-2xl mb-3 opacity-40"></i><p class="text-sm">এই পেজ শুধু মালিকের জন্য।</p>
-    </div>`;
+    c.innerHTML = `<div class="bg-white dark:bg-slate-800 rounded-xl p-8 text-center text-slate-400"><i class="fa-solid fa-lock text-2xl mb-3 opacity-40"></i><p class="text-sm">এই পেজ শুধু মালিকের জন্য।</p></div>`;
     return;
   }
-
-  c.innerHTML = `<div id="admin-user-list" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-    <div class="px-5 py-10 text-center text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>ইউজার লোড হচ্ছে...</div>
-  </div>`;
+  APP_STATE.adminTab = APP_STATE.adminTab || 'pending';
+  c.innerHTML = `
+    <div class="flex gap-2 mb-4">
+      ${['pending', 'approved', 'revoked', 'all'].map(t => `<button onclick="setAdminTab('${t}')" id="admin-tab-${t}" class="px-4 py-1.5 rounded-lg text-xs font-semibold border"></button>`).join('')}
+    </div>
+    <div id="admin-user-list" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+      <div class="px-5 py-10 text-center text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>ইউজার লোড হচ্ছে...</div>
+    </div>`;
+  updateAdminTabsUI();
 
   if (adminUsersUnsub) adminUsersUnsub();
-
   adminUsersUnsub = fbDb.collection('users').orderBy('createdAt', 'desc').onSnapshot((snap) => {
-    renderAdminUserList(snap.docs.map(d => ({ uid: d.id, ...d.data() })));
-  }, (err) => {
-    document.getElementById('admin-user-list').innerHTML = `<div class="px-5 py-6 text-center text-red-500 text-xs">লোড ব্যর্থ: ${esc(err.message)}</div>`;
+    APP_STATE.adminUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+    renderAdminUserList();
+  }, (err) => { document.getElementById('admin-user-list').innerHTML = `<div class="px-5 py-6 text-center text-red-500 text-xs">লোড ব্যর্থ: ${esc(err.message)}</div>`; });
+}
+
+function setAdminTab(t) { APP_STATE.adminTab = t; updateAdminTabsUI(); renderAdminUserList(); }
+
+function updateAdminTabsUI() {
+  const labels = { pending: 'পেন্ডিং', approved: 'Approved', revoked: 'Revoked', all: 'সব' };
+  Object.keys(labels).forEach(k => {
+    const btn = document.getElementById('admin-tab-' + k);
+    if (!btn) return;
+    btn.textContent = labels[k];
+    const active = APP_STATE.adminTab === k;
+    btn.className = `px-4 py-1.5 rounded-lg text-xs font-semibold border transition ${active ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`;
   });
 }
 
-function renderAdminUserList(users) {
+function userEffectiveStatus(u) {
+  if (u.status === 'revoked') return 'revoked';
+  if (u.status === 'approved') return subscriptionDaysLeft(u) > 0 || subscriptionDaysLeft(u) === Infinity ? 'approved' : 'pending';
+  return 'pending'; // trial (active বা expired দুটোই pending-review হিসেবে গণ্য)
+}
+
+function renderAdminUserList() {
   const el = document.getElementById('admin-user-list');
   if (!el) return;
+  let users = APP_STATE.adminUsers || [];
+  const tab = APP_STATE.adminTab;
+
+  if (tab !== 'all') users = users.filter(u => userEffectiveStatus(u) === tab);
+  if (tab === 'pending') {
+    // সবচেয়ে বেশিদিন Trial-শেষ (overdue) — আগে
+    users = users.slice().sort((a, b) => trialDaysLeft(a) - trialDaysLeft(b));
+  }
 
   const badge = (u) => {
-    if (u.status === 'approved') return `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Approved</span>`;
-    if (u.status === 'revoked') return `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Revoked</span>`;
+    const es = userEffectiveStatus(u);
+    if (es === 'approved') {
+      const sd = subscriptionDaysLeft(u);
+      return sd === Infinity ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Approved (সীমাহীন)</span>`
+        : `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Approved — ${sd} দিন বাকি</span>`;
+    }
+    if (es === 'revoked') return `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Revoked</span>`;
     const days = trialDaysLeft(u);
     return days > 0
       ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Trial — ${days} দিন বাকি</span>`
-      : `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Trial শেষ — অনুমোদন প্রয়োজন</span>`;
+      : `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Trial শেষ (${Math.abs(days)} দিন আগে) — অনুমোদন প্রয়োজন</span>`;
+  };
+
+  const actionCell = (u) => {
+    if (u.role === 'owner') return '<span class="text-[11px] text-slate-400">—</span>';
+    const es = userEffectiveStatus(u);
+    const durOpts = SUB_DURATIONS.map(d => `<option value="${d.days}">${d.label}</option>`).join('');
+    if (es === 'approved') {
+      return `<div class="flex items-center gap-1 justify-center">
+        <select id="dur-${u.uid}" class="text-[11px] border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 bg-white dark:bg-slate-700">${durOpts}</select>
+        <button onclick="extendSubscription('${u.uid}')" class="text-brand hover:underline text-xs"><i class="fa-solid fa-arrows-rotate mr-1"></i>Extend</button>
+        <button onclick="setUserStatus('${u.uid}','revoked')" class="text-red-500 hover:underline text-xs ml-2"><i class="fa-solid fa-ban"></i></button>
+      </div>`;
+    }
+    return `<div class="flex items-center gap-1 justify-center">
+      <select id="dur-${u.uid}" class="text-[11px] border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 bg-white dark:bg-slate-700">${durOpts}</select>
+      <button onclick="approveWithDuration('${u.uid}')" class="text-emerald-600 hover:underline text-xs"><i class="fa-solid fa-check mr-1"></i>Approve</button>
+      ${es !== 'revoked' ? `<button onclick="setUserStatus('${u.uid}','revoked')" class="text-red-500 hover:underline text-xs ml-2"><i class="fa-solid fa-ban"></i></button>` : ''}
+    </div>`;
   };
 
   el.innerHTML = `
@@ -54,7 +100,7 @@ function renderAdminUserList(users) {
         <tr><th class="px-4 py-2.5 text-left">ইউজার</th><th class="px-4 py-2.5 text-left">স্ট্যাটাস</th><th class="px-4 py-2.5 text-center">অ্যাকশন</th></tr>
       </thead>
       <tbody>
-        ${users.map(u => `
+        ${users.length ? users.map(u => `
         <tr class="border-t border-slate-100 dark:border-slate-700/50">
           <td class="px-4 py-3">
             <div class="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
@@ -65,20 +111,36 @@ function renderAdminUserList(users) {
             <div class="text-[11px] text-slate-400">${esc(u.email)}</div>
           </td>
           <td class="px-4 py-3">${badge(u)}</td>
-          <td class="px-4 py-3 text-center whitespace-nowrap">
-            ${u.role === 'owner' ? '<span class="text-[11px] text-slate-400">—</span>' : `
-              ${u.status !== 'approved' ? `<button onclick="setUserStatus('${u.uid}','approved')" class="text-emerald-600 hover:underline text-xs mr-3"><i class="fa-solid fa-check mr-1"></i>Approve</button>` : ''}
-              ${u.status !== 'revoked' ? `<button onclick="setUserStatus('${u.uid}','revoked')" class="text-red-500 hover:underline text-xs"><i class="fa-solid fa-ban mr-1"></i>Revoke</button>` : ''}
-            `}
-          </td>
-        </tr>`).join('')}
+          <td class="px-4 py-3 text-center whitespace-nowrap">${actionCell(u)}</td>
+        </tr>`).join('') : `<tr><td colspan="3" class="px-5 py-8 text-center text-slate-400 text-sm">কোনো ইউজার নেই</td></tr>`}
       </tbody>
     </table>
     </div>`;
 }
 
 function setUserStatus(uid, status) {
-  fbDb.collection('users').doc(uid).update({ status }).then(() => {
+  const data = { status };
+  if (status === 'revoked') data.subscriptionExpiresAt = firebase.firestore.FieldValue.delete();
+  fbDb.collection('users').doc(uid).update(data).then(() => {
     toast(status === 'approved' ? 'ইউজার Approve করা হয়েছে।' : 'ইউজার Revoke করা হয়েছে।', 's');
+  }).catch((err) => toast('ব্যর্থ: ' + err.message, 'e'));
+}
+
+function approveWithDuration(uid) {
+  const days = parseInt(document.getElementById('dur-' + uid).value) || 30;
+  const expiresAt = firebase.firestore.Timestamp.fromMillis(Date.now() + days * 86400000);
+  fbDb.collection('users').doc(uid).update({ status: 'approved', subscriptionExpiresAt: expiresAt }).then(() => {
+    toast(`Approve করা হয়েছে — মেয়াদ ${days} দিন।`, 's');
+  }).catch((err) => toast('ব্যর্থ: ' + err.message, 'e'));
+}
+
+function extendSubscription(uid) {
+  const days = parseInt(document.getElementById('dur-' + uid).value) || 30;
+  const u = (APP_STATE.adminUsers || []).find(x => x.uid === uid);
+  const currentExp = u?.subscriptionExpiresAt?.toDate ? u.subscriptionExpiresAt.toDate().getTime() : Date.now();
+  const base = Math.max(currentExp, Date.now()); // মেয়াদ শেষ হয়ে থাকলে আজ থেকে, নাহলে বর্তমান মেয়াদের পর থেকে
+  const newExp = firebase.firestore.Timestamp.fromMillis(base + days * 86400000);
+  fbDb.collection('users').doc(uid).update({ subscriptionExpiresAt: newExp }).then(() => {
+    toast(`সাবস্ক্রিপশন ${days} দিন বাড়ানো হয়েছে।`, 's');
   }).catch((err) => toast('ব্যর্থ: ' + err.message, 'e'));
 }
