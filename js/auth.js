@@ -86,28 +86,33 @@ function trialDaysLeft(profile) {
 
 // ✅ ফিক্স: Revoked ও Expired-Trial — দুটোই এখন unlockApp() কল করে,
 // শুধু readOnly ফ্ল্যাগ ও ভিন্ন ব্যানার সহ। কোনো hard-lockout screen না।
+function subscriptionDaysLeft(profile) {
+  if (!profile.subscriptionExpiresAt || !profile.subscriptionExpiresAt.toDate) return Infinity;
+  return Math.ceil((profile.subscriptionExpiresAt.toDate().getTime() - Date.now()) / 86400000);
+}
+
 function applyUserProfile(user, profile) {
   APP_STATE.currentUser = profile;
   APP_STATE.isAdmin = profile.email === APP_CONFIG.ADMIN_EMAIL;
 
   if (profile.status === 'approved') {
-    APP_STATE.readOnly = false;
-    unlockApp(profile, { mode: 'approved' });
+    const subDays = subscriptionDaysLeft(profile);
+    if (subDays === Infinity || subDays > 0) {
+      APP_STATE.readOnly = false;
+      unlockApp(profile, { mode: 'approved', subDaysLeft: subDays === Infinity ? null : subDays });
+    } else {
+      APP_STATE.readOnly = true;
+      unlockApp(profile, { mode: 'subscription-expired' });
+    }
   } else if (profile.status === 'revoked') {
     APP_STATE.readOnly = true;
     unlockApp(profile, { mode: 'revoked' });
   } else {
     const daysLeft = trialDaysLeft(profile);
-    if (daysLeft > 0) {
-      APP_STATE.readOnly = false;
-      unlockApp(profile, { mode: 'trial', daysLeft });
-    } else {
-      APP_STATE.readOnly = true;
-      unlockApp(profile, { mode: 'trial-expired' });
-    }
+    if (daysLeft > 0) { APP_STATE.readOnly = false; unlockApp(profile, { mode: 'trial', daysLeft }); }
+    else { APP_STATE.readOnly = true; unlockApp(profile, { mode: 'trial-expired' }); }
   }
 }
-
 function unlockApp(profile, statusInfo) {
   showAuthScreen(null);
   renderUserBadge(profile, statusInfo);
@@ -145,7 +150,6 @@ function renderUserBadge(profile, statusInfo) {
       <span class="hidden sm:inline text-xs font-medium text-slate-600 dark:text-slate-300">${esc(profile.displayName || profile.email)}</span>
     `;
   }
-
   const banner = document.getElementById('trial-banner');
   if (!banner) return;
 
@@ -153,11 +157,15 @@ function renderUserBadge(profile, statusInfo) {
     banner.className = 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs sm:text-sm px-4 py-2 text-center';
     banner.classList.remove('hidden');
     banner.innerHTML = `<i class="fa-solid fa-clock mr-1.5"></i> ট্রায়াল চলছে — আর <b>${statusInfo.daysLeft}</b> দিন বাকি। মেয়াদ শেষে চালিয়ে যেতে মালিকের অনুমোদন লাগবে।`;
-  } else if (statusInfo.mode === 'revoked' || statusInfo.mode === 'trial-expired') {
+  } else if (statusInfo.mode === 'revoked' || statusInfo.mode === 'trial-expired' || statusInfo.mode === 'subscription-expired') {
     banner.className = 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs sm:text-sm px-4 py-2 text-center font-medium';
     banner.classList.remove('hidden');
-    const reason = statusInfo.mode === 'revoked' ? 'অ্যাকাউন্ট বাতিল করা হয়েছে' : 'ট্রায়ালের মেয়াদ শেষ';
-    banner.innerHTML = `<i class="fa-solid fa-lock mr-1.5"></i> ${reason} — এখন শুধু <b>পুরনো তথ্য দেখতে</b> পারবেন, নতুন কিছু যোগ/সম্পাদনা করা যাবে না। সক্রিয় করতে মালিকের সাথে যোগাযোগ করুন।`;
+    const reason = statusInfo.mode === 'revoked' ? 'অ্যাকাউন্ট বাতিল করা হয়েছে' : statusInfo.mode === 'subscription-expired' ? 'সাবস্ক্রিপশনের মেয়াদ শেষ' : 'ট্রায়ালের মেয়াদ শেষ';
+    banner.innerHTML = `<i class="fa-solid fa-lock mr-1.5"></i> ${reason} — এখন শুধু <b>পুরনো তথ্য দেখতে</b> পারবেন। সক্রিয় করতে মালিকের সাথে যোগাযোগ করুন।`;
+  } else if (statusInfo.mode === 'approved' && statusInfo.subDaysLeft != null && statusInfo.subDaysLeft <= 7) {
+    banner.className = 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs sm:text-sm px-4 py-2 text-center';
+    banner.classList.remove('hidden');
+    banner.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1.5"></i> সাবস্ক্রিপশন আর <b>${statusInfo.subDaysLeft}</b> দিনে শেষ হবে — নবায়নের জন্য মালিকের সাথে যোগাযোগ করুন।`;
   } else {
     banner.classList.add('hidden');
   }
