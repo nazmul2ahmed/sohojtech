@@ -507,6 +507,23 @@ async function apiGetCompleteData() {
     return { success: false, message: err.message, medicines: [], customers: [], suppliers: [], inventory: [], sales: [], purchases: [], returns: [], expenses: [], payments: [], supplierPayments: [], openingEntries: [] };
   }
 }
+// ── FULL RESET — সব subcollection মুছে ফেলে, profile/subscription অক্ষুণ্ণ থাকে ──
+async function apiResetAllData() {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    const collections = ['medicines', 'inventory', 'customers', 'suppliers', 'sales', 'purchases', 'returns', 'expenses', 'payments', 'supplierPayments', 'openingEntries'];
+    for (const colName of collections) {
+      const snap = await userCol(colName).get();
+      const docs = snap.docs;
+      for (let i = 0; i < docs.length; i += 400) { // Firestore batch সীমা ৫০০, নিরাপদ থাকতে ৪০০
+        const batch = fbDb.batch();
+        docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
+    }
+    return { success: true, message: 'সব ডেটা মুছে ফেলা হয়েছে।' };
+  } catch (err) { return { success: false, message: err.message }; }
+}
 // collection query cache-first, খালি cache হলে fallback default (প্রথমবার অনলাইন বুট দরকার)
 async function cget2(colRef) {
   try {
