@@ -1,0 +1,153 @@
+'use strict';
+
+function renderAnalyticsModule() {
+  const c = document.getElementById('analytics-content');
+  if (!c) return;
+  const today = todayStr();
+  APP_STATE.anaFrom = APP_STATE.anaFrom || addDaysStr(today, -29);
+  APP_STATE.anaTo = APP_STATE.anaTo || today;
+
+  c.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
+      <div class="flex items-center gap-2"><label class="text-xs font-semibold text-slate-500">থেকে</label>
+        <input type="date" id="ana-from" value="${APP_STATE.anaFrom}" onchange="onAnaDateChange()" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
+      <div class="flex items-center gap-2"><label class="text-xs font-semibold text-slate-500">পর্যন্ত</label>
+        <input type="date" id="ana-to" value="${APP_STATE.anaTo}" onchange="onAnaDateChange()" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
+      <button onclick="setAnaRange(6)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৭ দিন</button>
+      <button onclick="setAnaRange(29)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৩০ দিন</button>
+      <button onclick="setAnaRange(89)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৯০ দিন</button>
+    </div>
+    <div id="ana-body"></div>
+  `;
+  renderAnaBody();
+}
+
+function setAnaRange(daysBack) {
+  APP_STATE.anaTo = todayStr();
+  APP_STATE.anaFrom = addDaysStr(APP_STATE.anaTo, -daysBack);
+  document.getElementById('ana-from').value = APP_STATE.anaFrom;
+  document.getElementById('ana-to').value = APP_STATE.anaTo;
+  renderAnaBody();
+}
+function onAnaDateChange() {
+  APP_STATE.anaFrom = document.getElementById('ana-from').value;
+  APP_STATE.anaTo = document.getElementById('ana-to').value;
+  renderAnaBody();
+}
+function addDaysStr(dateStr, delta) {
+  const d = new Date(dateStr); d.setDate(d.getDate() + delta);
+  return d.toISOString().split('T')[0];
+}
+
+function renderAnaBody() {
+  const body = document.getElementById('ana-body');
+  const from = APP_STATE.anaFrom, to = APP_STATE.anaTo;
+  const sales = APP_STATE.sales.filter(s => s.date >= from && s.date <= to);
+
+  let revenue = 0, cogs = 0, discount = 0;
+  const dayMap = {}, medMap = {}, custMap = {}, catMap = {};
+
+  sales.forEach(s => {
+    let saleRev = 0;
+    (s.items || []).forEach(item => {
+      const gross = item.qty * item.price;
+      const disc = gross * (item.discountPct || 0) / 100;
+      const net = gross - disc;
+      revenue += net; discount += disc; cogs += item.qty * (item.costPrice || 0); saleRev += net;
+
+      if (!medMap[item.medId]) medMap[item.medId] = { name: item.name, qty: 0, revenue: 0 };
+      medMap[item.medId].qty += item.qty; medMap[item.medId].revenue += net;
+
+      const med = APP_STATE.medicines.find(m => m.id === item.medId);
+      const cat = med?.category || 'অজানা';
+      catMap[cat] = round2((catMap[cat] || 0) + net);
+    });
+    dayMap[s.date] = round2((dayMap[s.date] || 0) + saleRev);
+    if (s.customerId !== 'WALK_IN') {
+      if (!custMap[s.customerId]) custMap[s.customerId] = { name: s.customerName, revenue: 0, count: 0 };
+      custMap[s.customerId].revenue += saleRev; custMap[s.customerId].count += 1;
+    }
+  });
+
+  const grossProfit = round2(revenue - cogs);
+  const topMeds = Object.values(medMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
+  const topMedsByRevenue = Object.values(medMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  const topCustomers = Object.values(custMap).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+  const catList = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+  const maxCat = Math.max(...catList.map(c => c[1]), 1);
+
+  // দৈনিক ট্রেন্ড — from-to রেঞ্জের প্রতিটা দিন (এমনকি বিক্রয় না থাকলেও ০)
+  const days = [];
+  let d = new Date(from);
+  const toD = new Date(to);
+  while (d <= toD) { days.push(d.toISOString().split('T')[0]); d.setDate(d.getDate() + 1); }
+  const maxDay = Math.max(...days.map(dt => dayMap[dt] || 0), 1);
+
+  document.getElementById('ana-body').innerHTML = `
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      ${statCard('মোট বিক্রয়', '৳' + fmtK(revenue), 'fa-sack-dollar', 'blue')}
+      ${statCard('COGS', '৳' + fmtK(cogs), 'fa-boxes-stacked', 'orange')}
+      ${statCard('গ্রস প্রফিট', '৳' + fmtK(grossProfit), 'fa-chart-line', 'green')}
+      ${statCard('ইনভয়েস সংখ্যা', sales.length + ' টি', 'fa-receipt', 'red')}
+    </div>
+
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-4">
+      <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4"><i class="fa-solid fa-chart-column text-brand mr-1"></i> দৈনিক বিক্রয় প্রবণতা</h5>
+      <div class="flex items-end gap-1 overflow-x-auto pb-2" style="min-height:140px">
+        ${days.map(dt => {
+          const val = dayMap[dt] || 0;
+          const h = Math.max(4, Math.round((val / maxDay) * 120));
+          return `<div class="flex flex-col items-center flex-shrink-0" style="width:${days.length > 40 ? '8px' : '22px'}" title="${dt}: ৳${fmt(val)}">
+            <div class="w-full bg-brand rounded-t" style="height:${h}px"></div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="flex justify-between text-[10px] text-slate-400 mt-1"><span>${esc(from)}</span><span>${esc(to)}</span></div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-700"><h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-trophy text-amber-500 mr-1"></i> টপ-সেলিং ওষুধ (Qty)</h5></div>
+        <div class="max-h-72 overflow-y-auto">
+          ${topMeds.length ? topMeds.map((m, i) => `
+            <div class="px-5 py-2.5 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center text-sm">
+              <span class="text-slate-700 dark:text-slate-200"><span class="text-slate-400 mr-2">${i + 1}.</span>${esc(m.name)}</span>
+              <span class="font-mono font-bold text-brand">${m.qty} ইউনিট</span>
+            </div>`).join('') : emptyRow('কোনো বিক্রয় নেই')}
+        </div>
+      </div>
+      <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-700"><h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-money-bill-trend-up text-emerald-500 mr-1"></i> টপ রেভিনিউ (ওষুধ)</h5></div>
+        <div class="max-h-72 overflow-y-auto">
+          ${topMedsByRevenue.length ? topMedsByRevenue.map((m, i) => `
+            <div class="px-5 py-2.5 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center text-sm">
+              <span class="text-slate-700 dark:text-slate-200"><span class="text-slate-400 mr-2">${i + 1}.</span>${esc(m.name)}</span>
+              <span class="font-mono font-bold text-emerald-600">৳${fmt(m.revenue)}</span>
+            </div>`).join('') : emptyRow('কোনো বিক্রয় নেই')}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+        <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-tags text-brand mr-1"></i> ক্যাটাগরি-ভিত্তিক বিক্রয়</h5>
+        ${catList.length ? catList.map(([cat, val]) => `
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs text-slate-500 w-24 truncate">${esc(cat)}</span>
+            <div class="flex-1 h-2.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-brand" style="width:${(val / maxCat * 100).toFixed(0)}%"></div></div>
+            <span class="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 w-20 text-right">৳${fmtK(val)}</span>
+          </div>`).join('') : emptyRow('কোনো ডেটা নেই')}
+      </div>
+      <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-700"><h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-users text-brand mr-1"></i> শীর্ষ গ্রাহক (রেভিনিউ)</h5></div>
+        <div class="max-h-64 overflow-y-auto">
+          ${topCustomers.length ? topCustomers.map((c, i) => `
+            <div class="px-5 py-2.5 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center text-sm">
+              <span class="text-slate-700 dark:text-slate-200"><span class="text-slate-400 mr-2">${i + 1}.</span>${esc(c.name)} <span class="text-[11px] text-slate-400">(${c.count} বিল)</span></span>
+              <span class="font-mono font-bold text-brand">৳${fmt(c.revenue)}</span>
+            </div>`).join('') : emptyRow('কোনো গ্রাহক নেই')}
+        </div>
+      </div>
+    </div>
+  `;
+}
