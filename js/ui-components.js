@@ -119,3 +119,29 @@ function toast(msg, type = 's') {
     setTimeout(() => t.remove(), 300);
   }, 3000);
 }
+function toggleCalculator() {
+  let modal = document.getElementById('calc-modal');
+  if (modal) { modal.remove(); return; }
+  modal = document.createElement('div');
+  modal.id = 'calc-modal';
+  modal.className = 'fixed bottom-20 right-4 z-[9997] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl p-3 w-64';
+  modal.innerHTML = `
+    <input id="calc-display" readonly class="w-full text-right text-xl font-mono p-2 mb-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-800 dark:text-white" value="0"/>
+    <div class="grid grid-cols-4 gap-1.5">
+      ${['7','8','9','÷','4','5','6','×','1','2','3','−','C','0','.','+'].map(k => `<button onclick="calcPress('${k}')" class="py-2 rounded-lg text-sm font-semibold ${['÷','×','−','+'].includes(k) ? 'bg-brand text-white' : k === 'C' ? 'bg-red-100 text-red-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white'}">${k}</button>`).join('')}
+      <button onclick="calcPress('=')" class="col-span-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white mt-1">=</button>
+    </div>`;
+  document.body.appendChild(modal);
+  APP_STATE.calcExpr = '';
+}
+function calcPress(k) {
+  const disp = document.getElementById('calc-display');
+  if (k === 'C') { APP_STATE.calcExpr = ''; disp.value = '0'; return; }
+  if (k === '=') {
+    try { disp.value = Function('"use strict";return (' + APP_STATE.calcExpr.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-') + ')')(); APP_STATE.calcExpr = String(disp.value); }
+    catch (e) { disp.value = 'Error'; APP_STATE.calcExpr = ''; }
+    return;
+  }
+  APP_STATE.calcExpr += k;
+  disp.value = APP_STATE.calcExpr;
+}
