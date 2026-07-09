@@ -48,6 +48,7 @@ const NAV_CONFIG = [
     items: [
       { id: 'dashboard', label: 'ড্যাশবোর্ড', icon: 'fa-gauge-high' },
       { id: 'pos',       label: 'বিক্রয় (POS)', icon: 'fa-cash-register' },
+      { id: 'analytics', label: 'সেলস অ্যানালিটিক্স', icon: 'fa-chart-line' },
     ],
   },
   {
