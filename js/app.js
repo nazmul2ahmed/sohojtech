@@ -105,8 +105,14 @@ function renderTabPanels() {
         <div id="pos-content"></div>
       </div>`;
     }
-
-    // ৩. পারচেজ (Purchase) ট্যাব
+    // ৩. অ্যানালিটিক্স (Analytics) ট্যাব
+    if (item.id === 'analytics') {
+      return `<div id="tab-analytics" class="tab-panel hidden tab-enter">
+        <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
+        <div id="analytics-content"></div>
+      </div>`;
+    }
+    // ৪. পারচেজ (Purchase) ট্যাব
     if (item.id === 'purchase') {
       return `<div id="tab-purchase" class="tab-panel hidden tab-enter">
         <div class="mb-5">
@@ -117,63 +123,63 @@ function renderTabPanels() {
         <div id="purchase-content"></div>
       </div>`;
     }
-    // ৪. রিটার্নস (Returns) ট্যাব
+    // ৫. রিটার্নস (Returns) ট্যাব
     if (item.id === 'returns') {
       return `<div id="tab-returns" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="returns-content"></div>
       </div>`;
     }
-    // ৫. ওপেনিং (Opening) ট্যাব
+    // ৬. ওপেনিং (Opening) ট্যাব
     if (item.id === 'opening') {
       return `<div id="tab-opening" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="opening-content"></div>
       </div>`;
     }
-    // ৬. ইনভেন্টরি (Inventory) ট্যাব
+    // ৭. ইনভেন্টরি (Inventory) ট্যাব
     if (item.id === 'inventory') {
       return `<div id="tab-inventory" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="inventory-content"></div>
       </div>`;
     }
-    // ৭. ওষুধ মাস্টার (Medicine) ট্যাব
+    // ৮. ওষুধ মাস্টার (Medicine) ট্যাব
     if (item.id === 'medicine') {
       return `<div id="tab-medicine" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="medicine-content"></div>
       </div>`;
     }
-    // ৮. গ্রাহক (Customers) ট্যাব
+    // ৯. গ্রাহক (Customers) ট্যাব
     if (item.id === 'customers') {
       return `<div id="tab-customers" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="customers-content"></div>
       </div>`;
     }
-    // ৯. সরবরাহকারী (Suppliers) ট্যাব
+    // ১০. সরবরাহকারী (Suppliers) ট্যাব
     if (item.id === 'suppliers') {
       return `<div id="tab-suppliers" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="suppliers-content"></div>
       </div>`;
     }
-    // ১০. অ্যাকাউন্টস (Accounts) ট্যাব
+    // ১১. অ্যাকাউন্টস (Accounts) ট্যাব
     if (item.id === 'accounts') {
       return `<div id="tab-accounts" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="accounts-content"></div>
       </div>`;
     }
-    // ১১. সেটিংস (Settings) ট্যাব
+    // ১২. সেটিংস (Settings) ট্যাব
     if (item.id === 'settings') {
       return `<div id="tab-settings" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="settings-content"></div>
       </div>`;
     }
-    // ১২. ইউজার ম্যানেজমেন্ট (Admin) ট্যাব
+    // ১৩. ইউজার ম্যানেজমেন্ট (Admin) ট্যাব
     if (item.id === 'admin') {
       return `<div id="tab-admin" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
@@ -238,6 +244,7 @@ function goTab(tabId) {
   try {
     if (tabId === 'dashboard') { setText('dash-date', formatTodayBn()); renderDashboardModule(); }
     if (tabId === 'pos') { renderPOSModule(); }
+    if (tabId === 'analytics') { renderAnalyticsModule(); }
     if (tabId === 'purchase') { renderPurchaseModule(); }
     if (tabId === 'returns') { renderReturnsModule(); }
     if (tabId === 'opening') { renderOpeningModule(); }
