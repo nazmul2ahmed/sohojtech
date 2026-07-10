@@ -536,3 +536,46 @@ async function cgetDoc(ref) {
   try { return await ref.get({ source: 'cache' }); }
   catch (e) { return ref.get(); }
 }
+// ── GLOBAL MEDICINE MASTER (২১k তালিকা) ──
+async function apiSearchGlobalMedicines(prefix) {
+  try {
+    const p = prefix.trim().toLowerCase();
+    if (!p) return { success: true, results: [] };
+    const snap = await fbDb.collection('globalMedicines')
+      .orderBy('brandLower').startAt(p).endAt(p + '\uf8ff').limit(25).get();
+    return { success: true, results: snap.docs.map(d => d.data()) };
+  } catch (err) { return { success: false, message: err.message, results: [] }; }
+}
+
+async function apiImportGlobalMedicine(med) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    const id = 'MED-' + med.brand.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 8) + '-' + Date.now();
+    const data = { id, brand: med.brand, generic: med.generic || '', doseForm: med.doseForm || '', strength: med.strength || '', manufacturer: med.manufacturer || '', category: med.category || '', unit: med.unit || 'পাতা', reorderLevel: 10 };
+    await userCol('medicines').doc(id).set(data);
+    await userCol('inventory').doc(id).set({ medId: id, brand: data.brand, doseForm: data.doseForm, strength: data.strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] });
+    return { success: true, medId: id };
+  } catch (err) { return { success: false, message: err.message }; }
+}
+
+// ── ADMIN: bulk upload globalMedicines ──
+async function apiBulkUploadGlobalMedicines(rows) {
+  try {
+    let done = 0;
+    for (let i = 0; i < rows.length; i += 400) {
+      const chunk = rows.slice(i, i + 400);
+      const batch = fbDb.batch();
+      chunk.forEach((r, idx) => {
+        const id = 'GM-' + (i + idx) + '-' + Date.now();
+        batch.set(fbDb.collection('globalMedicines').doc(id), {
+          id, brand: r.brand, brandLower: r.brand.toLowerCase(),
+          generic: r.generic || '', doseForm: r.doseForm || '', strength: r.strength || '',
+          manufacturer: r.manufacturer || '', category: r.category || '',
+        });
+      });
+      await batch.commit();
+      done += chunk.length;
+    }
+    return { success: true, count: done };
+  } catch (err) { return { success: false, message: err.message }; }
+}
