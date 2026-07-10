@@ -184,7 +184,7 @@ function renderGlobalMedUploader() {
     </details>
 
     <div id="gm-upload-status" class="text-xs text-slate-500 mb-2"></div>
-    <button onclick="uploadGlobalMedCsv()" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">আপলোড করুন</button>
+    <button onclick="uploadGlobalMedCsv()" id="gm-upload-btn" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">আপলোড করুন</button>
   `;
   box.appendChild(div);
 }
@@ -251,10 +251,22 @@ async function uploadGlobalMedCsv() {
 
   if (!rows.length) return toast('কোনো বৈধ row পাওয়া যায়নি।', 'w');
 
+  const btn = document.getElementById('gm-upload-btn');
   const statusEl = document.getElementById('gm-upload-status');
-  statusEl.textContent = `${rows.length} টি এন্ট্রি আপলোড হচ্ছে... (বড় ফাইলে কিছুক্ষণ সময় লাগতে পারে)`;
+  const idleText = 'আপলোড করুন';
 
-  const res = await apiBulkUploadGlobalMedicines(rows);
+  btn.disabled = true;
+  btn.textContent = 'প্রক্রিয়াকরণ হচ্ছে...';
+  statusEl.textContent = `০ / ${rows.length} সারি আপলোড হয়েছে...`;
+
+  // ✅ প্রতি ব্যাচ (৪০০ সারি) শেষে লাইভ প্রোগ্রেস দেখাবে — কোথায় আটকাচ্ছে বোঝা যাবে
+  const res = await apiBulkUploadGlobalMedicines(rows, (done, total) => {
+    statusEl.textContent = `${done} / ${total} সারি আপলোড হয়েছে...`;
+  });
+
+  btn.disabled = false;
+  btn.textContent = idleText;
+
   if (res.success) {
     toast(`${res.count} টি ওষুধ Global Master-এ যোগ হয়েছে।`, 's');
     document.getElementById('gm-csv-input').value = '';
