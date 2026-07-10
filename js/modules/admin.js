@@ -6,10 +6,14 @@ const SUB_DURATIONS = [{ label: '১ মাস', days: 30 }, { label: '৩ ম�
 function renderAdminModule() {
   const c = document.getElementById('admin-content');
   if (!c) return;
+
+  // ১. অ্যাডমিন চেক
   if (!APP_STATE.isAdmin) {
     c.innerHTML = `<div class="bg-white dark:bg-slate-800 rounded-xl p-8 text-center text-slate-400"><i class="fa-solid fa-lock text-2xl mb-3 opacity-40"></i><p class="text-sm">এই পেজ শুধু মালিকের জন্য।</p></div>`;
     return;
   }
+
+  // ২. ট্যাব স্টেট সেট ও HTML রেন্ডার
   APP_STATE.adminTab = APP_STATE.adminTab || 'pending';
   c.innerHTML = `
     <div class="flex gap-2 mb-4">
@@ -18,13 +22,20 @@ function renderAdminModule() {
     <div id="admin-user-list" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
       <div class="px-5 py-10 text-center text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>ইউজার লোড হচ্ছে...</div>
     </div>`;
-  updateAdminTabsUI();
 
+  // ৩. UI ও সাব-মডিউল ইনিশিয়ালিজেশন (HTML তৈরি হওয়ার পর)
+  updateAdminTabsUI();
+  setTimeout(renderGlobalMedUploader, 100); // <--- এখানে কল করা সবচেয়ে নিরাপদ
+
+  // ৪. ফায়ারবেস লিসেনার (Realtime Listener)
   if (adminUsersUnsub) adminUsersUnsub();
   adminUsersUnsub = fbDb.collection('users').orderBy('createdAt', 'desc').onSnapshot((snap) => {
     APP_STATE.adminUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
     renderAdminUserList();
-  }, (err) => { document.getElementById('admin-user-list').innerHTML = `<div class="px-5 py-6 text-center text-red-500 text-xs">লোড ব্যর্থ: ${esc(err.message)}</div>`; });
+  }, (err) => { 
+    const listEl = document.getElementById('admin-user-list');
+    if (listEl) listEl.innerHTML = `<div class="px-5 py-6 text-center text-red-500 text-xs">লোড ব্যর্থ: ${esc(err.message)}</div>`; 
+  });
 }
 
 function setAdminTab(t) { APP_STATE.adminTab = t; updateAdminTabsUI(); renderAdminUserList(); }
