@@ -62,6 +62,9 @@ function renderMedicineModule() {
           <button onclick="openMedicineForm(null)" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
             <i class="fa-solid fa-plus mr-1"></i> নতুন ওষুধ
           </button>
+          <button onclick="openGlobalMedSearch()" class="border border-brand text-brand text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
+          <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Master থেকে আমদানি
+          </button>
         </div>
       </div>
       <div id="med-table-body"></div>
@@ -281,4 +284,47 @@ async function deleteMedicineConfirm(medId) {
   } catch (err) {
     showFatalError('ওষুধ মুছতে সমস্যা:\n' + err.message);
   }
+}
+
+function openGlobalMedSearch() {
+  const modal = document.createElement('div');
+  modal.id = 'gm-search-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-lg w-full max-h-[80vh] flex flex-col">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-3">Global Master থেকে ওষুধ আমদানি</h4>
+      <input type="text" id="gm-search-input" placeholder="ওষুধের নাম টাইপ করুন..." oninput="onGlobalMedSearch(this.value)"
+        class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white mb-3"/>
+      <div id="gm-search-results" class="flex-1 overflow-y-auto"></div>
+      <button onclick="document.getElementById('gm-search-modal').remove()" class="mt-3 border border-slate-300 dark:border-slate-600 rounded-lg py-2 text-sm text-slate-600 dark:text-slate-300">বন্ধ করুন</button>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('gm-search-input').focus();
+}
+
+let gmSearchTimer = null;
+function onGlobalMedSearch(val) {
+  clearTimeout(gmSearchTimer);
+  gmSearchTimer = setTimeout(async () => {
+    const box = document.getElementById('gm-search-results');
+    if (val.trim().length < 2) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="text-center text-xs text-slate-400 py-4"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+    const res = await apiSearchGlobalMedicines(val);
+    if (!res.success || !res.results.length) { box.innerHTML = '<div class="text-center text-xs text-slate-400 py-4">পাওয়া যায়নি</div>'; return; }
+    box.innerHTML = res.results.map(m => `
+      <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/50">
+        <div><div class="text-sm font-semibold">${esc(m.brand)}</div><div class="text-[11px] text-slate-400">${esc(m.generic||'')} • ${esc(m.doseForm||'')} ${esc(m.strength||'')} • ${esc(m.manufacturer||'')}</div></div>
+        <button onclick='importGlobalMed(${JSON.stringify(m).replace(/'/g,"&apos;")})' class="text-brand text-xs font-semibold hover:underline">যোগ করুন</button>
+      </div>`).join('');
+  }, 350);
+}
+
+async function importGlobalMed(med) {
+  const res = await apiImportGlobalMedicine(med);
+  if (!res.success) return toast(res.message, 'w');
+  APP_STATE.medicines.push({ id: res.medId, brand: med.brand, generic: med.generic||'', doseForm: med.doseForm||'', strength: med.strength||'', manufacturer: med.manufacturer||'', category: med.category||'', unit: 'পাতা', reorderLevel: 10 });
+  APP_STATE.inventory.push({ medId: res.medId, brand: med.brand, doseForm: med.doseForm||'', strength: med.strength||'', totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] });
+  toast(`"${med.brand}" আমদানি হয়েছে।`, 's');
+  document.getElementById('gm-search-modal')?.remove();
+  renderMedTable();
 }
