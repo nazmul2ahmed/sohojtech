@@ -144,3 +144,43 @@ function extendSubscription(uid) {
     toast(`সাবস্ক্রিপশন ${days} দিন বাড়ানো হয়েছে।`, 's');
   }).catch((err) => toast('ব্যর্থ: ' + err.message, 'e'));
 }
+function renderGlobalMedUploader() {
+  const box = document.getElementById('admin-content');
+  const existing = document.getElementById('gm-upload-box');
+  if (existing) return;
+  const div = document.createElement('div');
+  div.id = 'gm-upload-box';
+  div.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mt-4';
+  div.innerHTML = `
+    <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2"><i class="fa-solid fa-database text-brand mr-1"></i> Global Medicine Master Upload (শুধু Admin)</h5>
+    <p class="text-[11px] text-slate-400 mb-2">CSV ফরম্যাট (হেডার সহ): <code class="bg-slate-100 dark:bg-slate-700 px-1 rounded">brand,generic,doseForm,strength,manufacturer,category</code></p>
+    <textarea id="gm-csv-input" rows="6" placeholder="brand,generic,doseForm,strength,manufacturer,category&#10;Napa,Paracetamol,ট্যাবলেট,500mg,Beximco,Analgesic" class="w-full px-3 py-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white mb-2"></textarea>
+    <div id="gm-upload-status" class="text-xs text-slate-500 mb-2"></div>
+    <button onclick="uploadGlobalMedCsv()" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">আপলোড করুন</button>
+  `;
+  box.appendChild(div);
+}
+
+async function uploadGlobalMedCsv() {
+  const raw = document.getElementById('gm-csv-input').value.trim();
+  if (!raw) return toast('CSV পেস্ট করুন।', 'w');
+  const lines = raw.split('\n').filter(l => l.trim());
+  const headers = lines[0].split(',').map(h => h.trim());
+  const rows = lines.slice(1).map(line => {
+    const vals = line.split(',');
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => r.brand);
+
+  if (!rows.length) return toast('কোনো বৈধ row পাওয়া যায়নি।', 'w');
+  document.getElementById('gm-upload-status').textContent = `${rows.length} টি এন্ট্রি আপলোড হচ্ছে...`;
+  const res = await apiBulkUploadGlobalMedicines(rows);
+  if (res.success) {
+    toast(`${res.count} টি ওষুধ Global Master-এ যোগ হয়েছে।`, 's');
+    document.getElementById('gm-csv-input').value = '';
+    document.getElementById('gm-upload-status').textContent = '';
+  } else {
+    document.getElementById('gm-upload-status').textContent = 'ব্যর্থ: ' + res.message;
+  }
+}
