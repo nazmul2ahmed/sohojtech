@@ -322,7 +322,7 @@ function onGlobalMedSearch(val) {
 async function importGlobalMed(med) {
   const res = await apiImportGlobalMedicine(med);
   if (!res.success) return toast(res.message, 'w');
-  APP_STATE.medicines.push({ id: res.medId, brand: med.brand, generic: med.generic||'', doseForm: med.doseForm||'', strength: med.strength||'', manufacturer: med.manufacturer||'', category: med.category||'', unit: 'পাতা', reorderLevel: 10 });
+  APP_STATE.medicines.push({ id: res.medId, brand: med.brand, generic: med.generic||'', doseForm: med.doseForm||'', strength: med.strength||'', manufacturer: med.manufacturer||'', category: med.category||'', unit: 'পিস', reorderLevel: 10 });
   APP_STATE.inventory.push({ medId: res.medId, brand: med.brand, doseForm: med.doseForm||'', strength: med.strength||'', totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] });
   toast(`"${med.brand}" আমদানি হয়েছে।`, 's');
   document.getElementById('gm-search-modal')?.remove();
