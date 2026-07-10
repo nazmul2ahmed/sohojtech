@@ -559,9 +559,10 @@ async function apiImportGlobalMedicine(med) {
 }
 
 // ── ADMIN: bulk upload globalMedicines ──
-async function apiBulkUploadGlobalMedicines(rows) {
+async function apiBulkUploadGlobalMedicines(rows, onProgress) {
   try {
     let done = 0;
+    const total = rows.length;
     for (let i = 0; i < rows.length; i += 400) {
       const chunk = rows.slice(i, i + 400);
       const batch = fbDb.batch();
@@ -575,7 +576,10 @@ async function apiBulkUploadGlobalMedicines(rows) {
       });
       await batch.commit();
       done += chunk.length;
+      if (onProgress) onProgress(done, total);
     }
     return { success: true, count: done };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
 }
