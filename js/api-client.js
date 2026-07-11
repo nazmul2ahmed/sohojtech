@@ -566,15 +566,27 @@ async function apiBulkUploadGlobalMedicines(rows, onProgress) {
     for (let i = 0; i < rows.length; i += 400) {
       const chunk = rows.slice(i, i + 400);
       const batch = fbDb.batch();
-      chunk.forEach((r, idx) => {
-        const id = 'GM-' + (i + idx) + '-' + Date.now();
+      chunk.forEach((r) => {
+        // ✅ ফিক্স: deterministic ID (নাম+ডোজ+শক্তি-ভিত্তিক) — Date.now() না।
+        // একই সারি দ্বিতীয়বার আপলোড হলে ওভাররাইট হবে, ডুপ্লিকেট তৈরি হবে না।
+        const slug = (r.brand + '-' + (r.doseForm||'') + '-' + (r.strength||''))
+          .toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 60);
+        const id = 'GM-' + slug;
         batch.set(fbDb.collection('globalMedicines').doc(id), {
           id, brand: r.brand, brandLower: r.brand.toLowerCase(),
           generic: r.generic || '', doseForm: r.doseForm || '', strength: r.strength || '',
           manufacturer: r.manufacturer || '', category: r.category || '',
         });
       });
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (err) {
+        // ✅ Quota শেষ হলে স্পষ্ট বার্তা + এখান পর্যন্ত যা হয়েছে তা রিপোর্ট করা
+        if (err.code === 'resource-exhausted') {
+          return { success: false, quotaExceeded: true, count: done, message: `Firestore দৈনিক সীমা শেষ। ${done}/${total} টি আপলোড হয়েছে — বাকিটা quota রিসেট হলে (মধ্যরাত, Pacific Time) আবার এই একই CSV পেস্ট করলে বাকি অংশ থেকেই চলবে, ডুপ্লিকেট হবে না।` };
+        }
+        throw err;
+      }
       done += chunk.length;
       if (onProgress) onProgress(done, total);
     }
