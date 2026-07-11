@@ -267,6 +267,12 @@ async function uploadGlobalMedCsv() {
   btn.disabled = false;
   btn.textContent = idleText;
 
+  if (!res.success && res.quotaExceeded) {
+  document.getElementById('gm-upload-status').innerHTML = `<span class="text-amber-600">${esc(res.message)}</span>`;
+  toast('Quota শেষ — আংশিক আপলোড হয়েছে, নিরাপদে পরে চালিয়ে নিতে পারবেন।', 'w');
+  return;
+}
+
   if (res.success) {
     toast(`${res.count} টি ওষুধ Global Master-এ যোগ হয়েছে।`, 's');
     document.getElementById('gm-csv-input').value = '';
