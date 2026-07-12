@@ -110,13 +110,26 @@ async function apiDeleteCustomer(custId) {
 async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amount, note, custData) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
-    if (amount > currentDue + 0.01) return { success: false, message: `বাকির (৳${fmt(currentDue)}) চেয়ে বেশি নেওয়া যাবে না।` };
     const custRef = userCol('customers').doc(custId);
     const paymentId = 'PAY-' + Date.now();
-    const batch = fbDb.batch();
-    batch.set(custRef, { id: custId, name: custData.name, phone: custData.phone || '', address: custData.address || '', due: round2(currentDue - amount), totalPaid: round2(currentTotalPaid + amount) }, { merge: true });
-    batch.set(userCol('payments').doc(paymentId), { paymentId, date: todayStr(), customerId: custId, customerName: custData.name, amount, note: note || 'বাকি আদায়' });
-    await batch.commit();
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ ফিক্স: currentDue প্যারামিটার (client-side stale ডেটা) আর ব্যবহার হচ্ছে না হিসাবে —
+      // transaction-এর ভেতরে fresh read করে সেটা থেকেই ভ্যালিডেশন ও হিসাব হচ্ছে
+      const custDoc = await tx.get(custRef);
+      if (!custDoc.exists) throw new Error('গ্রাহক পাওয়া যায়নি।');
+      const c = custDoc.data();
+      const freshDue = c.due || 0;
+      const freshTotalPaid = c.totalPaid || 0;
+
+      if (amount > freshDue + 0.01) {
+        throw new Error(`বাকির (৳${fmt(freshDue)}) চেয়ে বেশি নেওয়া যাবে না।`);
+      }
+
+      tx.set(custRef, { id: custId, name: custData.name, phone: custData.phone || '', address: custData.address || '', due: round2(freshDue - amount), totalPaid: round2(freshTotalPaid + amount) }, { merge: true });
+      tx.set(userCol('payments').doc(paymentId), { paymentId, date: todayStr(), customerId: custId, customerName: custData.name, amount, note: note || 'বাকি আদায়' });
+    });
+
     return { success: true, message: `৳${fmt(amount)} আদায় হয়েছে।` };
   } catch (err) { return { success: false, message: err.message }; }
 }
@@ -233,31 +246,43 @@ async function apiDeleteSale(sale) {
   try {
     const uniqueMedIds = [...new Set(sale.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
-    const invDocs = await Promise.all(invRefs.map(r => cget(r)));
-    const invMap = {};
-    uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null }; });
-    sale.items.forEach(item => {
-      const e = invMap[item.medId]; if (!e.data) return;
-      const batches = [...(e.data.batches || [])];
-      if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
-      else batches.push({ batchId: 'BAT-VOID-' + Date.now(), expiry: '', stock: item.qty, cost: item.costPrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
-      e.data.batches = batches;
+    const hasCustomer = sale.customerId && sale.customerId !== 'WALK_IN';
+    const custRef = hasCustomer ? userCol('customers').doc(sale.customerId) : null;
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
+      const custDoc = custRef ? await tx.get(custRef) : null;
+
+      const invMap = {};
+      uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null }; });
+
+      sale.items.forEach(item => {
+        const e = invMap[item.medId]; if (!e.data) return;
+        const batches = [...(e.data.batches || [])];
+        if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
+        else batches.push({ batchId: 'BAT-VOID-' + Date.now(), expiry: '', stock: item.qty, cost: item.costPrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
+        e.data.batches = batches;
+      });
+
+      let custFields = null;
+      if (custRef && custDoc && custDoc.exists) {
+        custFields = { due: Math.max(0, round2((custDoc.data().due || 0) - (sale.due || 0))), totalPaid: Math.max(0, round2((custDoc.data().totalPaid || 0) - (sale.cashPaid || 0))) };
+      }
+
+      // ✅ সব write পরে
+      tx.delete(userCol('sales').doc(sale.invoiceNo));
+      Object.values(invMap).forEach(e => {
+        if (!e.data) return;
+        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
+        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true });
+      });
+      if (custRef && custFields) tx.update(custRef, custFields);
     });
-    let custRef = null, custFields = null;
-    if (sale.customerId && sale.customerId !== 'WALK_IN') {
-      custRef = userCol('customers').doc(sale.customerId);
-      const cd = await cget(custRef);
-      if (cd.exists) custFields = { due: Math.max(0, round2((cd.data().due || 0) - (sale.due || 0))), totalPaid: Math.max(0, round2((cd.data().totalPaid || 0) - (sale.cashPaid || 0))) };
-    }
-    const batch = fbDb.batch();
-    batch.delete(userCol('sales').doc(sale.invoiceNo));
-    Object.values(invMap).forEach(e => { if (!e.data) return; const ts = e.data.batches.reduce((a, b) => a + b.stock, 0); batch.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true }); });
-    if (custRef && custFields) batch.update(custRef, custFields);
-    await batch.commit();
+
     return { success: true, message: 'বিক্রয় মুছে ফেলা হয়েছে, স্টক/বাকি ফেরত হয়েছে।' };
   } catch (err) { return { success: false, message: err.message }; }
 }
-
 // ────────────────────────────────────────────────────────────
 // PURCHASE
 // ────────────────────────────────────────────────────────────
@@ -266,30 +291,36 @@ async function apiSubmitPurchase(purchase) {
   try {
     const invRefs = purchase.items.map(item => userCol('inventory').doc(item.medId));
     const supRef = userCol('suppliers').doc(purchase.supplierId);
-    const [invDocs, supDoc] = await Promise.all([Promise.all(invRefs.map(r => cget(r))), cget(supRef)]);
 
-    const invUpdates = purchase.items.map((item, idx) => {
-      const invDoc = invDocs[idx];
-      const newBatch = { batchId: 'BAT-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000), expiry: item.expiryDate || '', stock: item.qty, cost: item.purchasePrice, mrp: item.mrp, sell: item.sellPrice || 0 };
-      item.batchId = newBatch.batchId; // ✅ delete-এর সময় সঠিক ব্যাচ খুঁজতে
-      const existing = invDoc.exists ? invDoc.data() : null;
-      const batches = [...(existing?.batches || []), newBatch].sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
-      const totalStock = batches.reduce((a, b) => a + b.stock, 0);
-      const reorderLevel = item.reorderLevel || 10;
-      const fields = { medId: item.medId, brand: item.brand, doseForm: item.doseForm || '', strength: item.strength || '', batches, totalStock, costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: batches[0]?.expiry || '', sellPrice: item.sellPrice > 0 ? item.sellPrice : (existing?.sellPrice || 0), status: totalStock === 0 ? 'out' : totalStock <= reorderLevel ? 'low' : 'ok' };
-      return { ref: invRefs[idx], fields, exists: invDoc.exists };
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
+      const supDoc = await tx.get(supRef);
+
+      const invUpdates = purchase.items.map((item, idx) => {
+        const invDoc = invDocs[idx];
+        const newBatch = { batchId: 'BAT-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000), expiry: item.expiryDate || '', stock: item.qty, cost: item.purchasePrice, mrp: item.mrp, sell: item.sellPrice || 0 };
+        item.batchId = newBatch.batchId; // ✅ delete-এর সময় সঠিক ব্যাচ খুঁজতে
+        const existing = invDoc.exists ? invDoc.data() : null;
+        const batches = [...(existing?.batches || []), newBatch].sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+        const totalStock = batches.reduce((a, b) => a + b.stock, 0);
+        const reorderLevel = item.reorderLevel || 10;
+        const fields = { medId: item.medId, brand: item.brand, doseForm: item.doseForm || '', strength: item.strength || '', batches, totalStock, costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: batches[0]?.expiry || '', sellPrice: item.sellPrice > 0 ? item.sellPrice : (existing?.sellPrice || 0), status: totalStock === 0 ? 'out' : totalStock <= reorderLevel ? 'low' : 'ok' };
+        return { ref: invRefs[idx], fields, exists: invDoc.exists };
+      });
+
+      let supUpdate = null;
+      if (supDoc.exists) {
+        const sup = supDoc.data();
+        supUpdate = purchase.paymentType === 'বাকি' ? { totalPayable: round2((sup.totalPayable || 0) + purchase.totalCost) } : { totalPaid: round2((sup.totalPaid || 0) + purchase.totalCost) };
+      }
+
+      // ✅ সব write পরে
+      tx.set(userCol('purchases').doc(purchase.purchaseId), purchase);
+      invUpdates.forEach(u => { if (u.exists) tx.update(u.ref, u.fields); else tx.set(u.ref, u.fields); });
+      if (supUpdate) tx.update(supRef, supUpdate);
     });
 
-    let supUpdate = null;
-    if (supDoc.exists) {
-      const sup = supDoc.data();
-      supUpdate = purchase.paymentType === 'বাকি' ? { totalPayable: round2((sup.totalPayable || 0) + purchase.totalCost) } : { totalPaid: round2((sup.totalPaid || 0) + purchase.totalCost) };
-    }
-    const batch = fbDb.batch();
-    batch.set(userCol('purchases').doc(purchase.purchaseId), purchase);
-    invUpdates.forEach(u => { if (u.exists) batch.update(u.ref, u.fields); else batch.set(u.ref, u.fields); });
-    if (supUpdate) batch.update(supRef, supUpdate);
-    await batch.commit();
     return { success: true, message: `ক্রয় রেকর্ড হয়েছে! Invoice: ${purchase.purchaseId}` };
   } catch (err) { return { success: false, message: err.message }; }
 }
@@ -298,26 +329,33 @@ async function apiDeletePurchase(purchase) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const invRefs = purchase.items.map(i => userCol('inventory').doc(i.medId));
-    const invDocs = await Promise.all(invRefs.map(r => cget(r)));
-    const invUpdates = purchase.items.map((item, idx) => {
-      const invDoc = invDocs[idx]; if (!invDoc.exists) return null;
-      const inv = invDoc.data();
-      const batches = (inv.batches || []).filter(b => b.batchId !== item.batchId);
-      const totalStock = batches.reduce((a, b) => a + b.stock, 0);
-      return { ref: invRefs[idx], fields: { batches, totalStock, costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)) } };
-    }).filter(Boolean);
-    let supRef = null, supFields = null;
-    const supDoc = await cget(userCol('suppliers').doc(purchase.supplierId));
-    if (supDoc.exists) {
-      const sup = supDoc.data();
-      supRef = userCol('suppliers').doc(purchase.supplierId);
-      supFields = purchase.paymentType === 'বাকি' ? { totalPayable: Math.max(0, round2((sup.totalPayable || 0) - purchase.totalCost)) } : { totalPaid: Math.max(0, round2((sup.totalPaid || 0) - purchase.totalCost)) };
-    }
-    const batch = fbDb.batch();
-    batch.delete(userCol('purchases').doc(purchase.purchaseId));
-    invUpdates.forEach(u => batch.update(u.ref, u.fields));
-    if (supRef && supFields) batch.update(supRef, supFields);
-    await batch.commit();
+    const supRef = userCol('suppliers').doc(purchase.supplierId);
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
+      const supDoc = await tx.get(supRef);
+
+      const invUpdates = purchase.items.map((item, idx) => {
+        const invDoc = invDocs[idx]; if (!invDoc.exists) return null;
+        const inv = invDoc.data();
+        const batches = (inv.batches || []).filter(b => b.batchId !== item.batchId);
+        const totalStock = batches.reduce((a, b) => a + b.stock, 0);
+        return { ref: invRefs[idx], fields: { batches, totalStock, costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)) } };
+      }).filter(Boolean);
+
+      let supFields = null;
+      if (supDoc.exists) {
+        const sup = supDoc.data();
+        supFields = purchase.paymentType === 'বাকি' ? { totalPayable: Math.max(0, round2((sup.totalPayable || 0) - purchase.totalCost)) } : { totalPaid: Math.max(0, round2((sup.totalPaid || 0) - purchase.totalCost)) };
+      }
+
+      // ✅ সব write পরে
+      tx.delete(userCol('purchases').doc(purchase.purchaseId));
+      invUpdates.forEach(u => tx.update(u.ref, u.fields));
+      if (supFields) tx.update(supRef, supFields);
+    });
+
     return { success: true, message: 'ক্রয় মুছে ফেলা হয়েছে, স্টক/পাওনা ফেরত হয়েছে।' };
   } catch (err) { return { success: false, message: err.message }; }
 }
@@ -330,27 +368,39 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
   try {
     const uniqueMedIds = [...new Set(returnDoc.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
-    const invDocs = await Promise.all(invRefs.map(r => cget(r)));
-    const invMap = {};
-    uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null }; });
-    returnDoc.items.forEach(item => {
-      const e = invMap[item.medId]; if (!e.data) return;
-      const batches = [...(e.data.batches || [])];
-      if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
-      else batches.push({ batchId: 'BAT-RET-' + Date.now(), expiry: '', stock: item.qty, cost: item.costPrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
-      e.data.batches = batches;
+    const custRef = custDueReduction > 0 ? userCol('customers').doc(custId) : null;
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
+      const custDoc = custRef ? await tx.get(custRef) : null;
+
+      const invMap = {};
+      uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null }; });
+
+      returnDoc.items.forEach(item => {
+        const e = invMap[item.medId]; if (!e.data) return;
+        const batches = [...(e.data.batches || [])];
+        if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
+        else batches.push({ batchId: 'BAT-RET-' + Date.now(), expiry: '', stock: item.qty, cost: item.costPrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
+        e.data.batches = batches;
+      });
+
+      let custFields = null;
+      if (custRef && custDoc && custDoc.exists) {
+        custFields = { due: round2((custDoc.data().due || 0) - custDueReduction) };
+      }
+
+      // ✅ সব write পরে
+      tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
+      Object.values(invMap).forEach(e => {
+        if (!e.data) return;
+        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
+        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true });
+      });
+      if (custRef && custFields) tx.update(custRef, custFields);
     });
-    let custRef = null, custFields = null;
-    if (custDueReduction > 0) {
-      custRef = userCol('customers').doc(custId);
-      const cd = await cget(custRef);
-      if (cd.exists) custFields = { due: round2((cd.data().due || 0) - custDueReduction) };
-    }
-    const batch = fbDb.batch();
-    batch.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
-    Object.values(invMap).forEach(e => { if (!e.data) return; const ts = e.data.batches.reduce((a, b) => a + b.stock, 0); batch.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true }); });
-    if (custRef && custFields) batch.update(custRef, custFields);
-    await batch.commit();
+
     return { success: true, message: 'রিটার্ন সফল হয়েছে!' };
   } catch (err) { return { success: false, message: err.message }; }
 }
@@ -360,28 +410,41 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
   try {
     const uniqueMedIds = [...new Set(returnDoc.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
-    const invDocs = await Promise.all(invRefs.map(r => cget(r)));
-    const invMap = {};
-    uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null }; });
-    returnDoc.items.forEach(item => {
-      const e = invMap[item.medId]; if (!e.data) return;
-      let batches = [...(e.data.batches || [])];
-      batches.sort((a, b) => (b.expiry || '0000') > (a.expiry || '0000') ? 1 : -1);
-      let remaining = item.qty;
-      batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; }).filter(b => b.stock > 0);
-      e.data.batches = batches;
+    const supRef = supPayableReduction > 0 ? userCol('suppliers').doc(supId) : null;
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
+      const supDoc = supRef ? await tx.get(supRef) : null;
+
+      const invMap = {};
+      uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null }; });
+
+      returnDoc.items.forEach(item => {
+        const e = invMap[item.medId]; if (!e.data) return;
+        let batches = [...(e.data.batches || [])];
+        batches.sort((a, b) => (b.expiry || '0000') > (a.expiry || '0000') ? 1 : -1);
+        let remaining = item.qty;
+        batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; }).filter(b => b.stock > 0);
+        e.data.batches = batches;
+      });
+
+      let supFields = null;
+      if (supRef && supDoc && supDoc.exists) {
+        supFields = { totalPayable: Math.max(0, round2((supDoc.data().totalPayable || 0) - supPayableReduction)) };
+      }
+
+      // ✅ সব write পরে
+      tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
+      Object.values(invMap).forEach(e => {
+        if (!e.data) return;
+        const sorted = e.data.batches.slice().sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
+        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: sorted[0]?.expiry || '' }, { merge: true });
+      });
+      if (supRef && supFields) tx.update(supRef, supFields);
     });
-    let supRef = null, supFields = null;
-    if (supPayableReduction > 0) {
-      supRef = userCol('suppliers').doc(supId);
-      const sd = await cget(supRef);
-      if (sd.exists) supFields = { totalPayable: Math.max(0, round2((sd.data().totalPayable || 0) - supPayableReduction)) };
-    }
-    const batch = fbDb.batch();
-    batch.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
-    Object.values(invMap).forEach(e => { if (!e.data) return; const sorted = e.data.batches.slice().sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1); const ts = e.data.batches.reduce((a, b) => a + b.stock, 0); batch.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: sorted[0]?.expiry || '' }, { merge: true }); });
-    if (supRef && supFields) batch.update(supRef, supFields);
-    await batch.commit();
+
     return { success: true, message: returnDoc.reason === 'ধ্বংস' ? 'মেয়াদোত্তীর্ণ পণ্য রাইট-অফ হয়েছে!' : 'সাপ্লায়ার রিটার্ন সফল!' };
   } catch (err) { return { success: false, message: err.message }; }
 }
@@ -391,30 +454,60 @@ async function apiDeleteReturn(ret) {
   try {
     const uniqueMedIds = [...new Set(ret.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
-    const invDocs = await Promise.all(invRefs.map(r => cget(r)));
-    const invMap = {};
-    uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null }; });
 
-    if (ret.returnType === 'customer') {
-      ret.items.forEach(item => { const e = invMap[item.medId]; if (!e.data) return; let batches = [...(e.data.batches || [])]; let remaining = item.qty; batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; }).filter(b => b.stock > 0); e.data.batches = batches; });
-    } else {
-      ret.items.forEach(item => { const e = invMap[item.medId]; if (!e.data) return; const batches = [...(e.data.batches || [])]; if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty }; else batches.push({ batchId: 'BAT-VOID-' + Date.now(), expiry: '', stock: item.qty, cost: item.purchasePrice || 0, mrp: 0, sell: e.data.sellPrice || 0 }); e.data.batches = batches; });
-    }
-    let partyRef = null, partyFields = null;
+    // ✅ partyRef কোন কালেকশন থেকে আসবে তা আগেই নির্ধারণ (read এখনো হয়নি)
+    let partyRef = null;
     if (ret.returnType === 'customer' && ret.refundMethod === 'বাকি সমন্বয়') {
       partyRef = userCol('customers').doc(ret.partyId);
-      const cd = await cget(partyRef);
-      if (cd.exists) partyFields = { due: round2((cd.data().due || 0) + ret.amount) };
     } else if (ret.returnType === 'supplier' && ret.reason === 'ফেরত' && ret.refundMethod === 'পাওনা সমন্বয়') {
       partyRef = userCol('suppliers').doc(ret.partyId);
-      const sd = await cget(partyRef);
-      if (sd.exists) partyFields = { totalPayable: round2((sd.data().totalPayable || 0) + ret.amount) };
     }
-    const batch = fbDb.batch();
-    batch.delete(userCol('returns').doc(ret.returnId));
-    Object.values(invMap).forEach(e => { if (!e.data) return; const ts = e.data.batches.reduce((a, b) => a + b.stock, 0); batch.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true }); });
-    if (partyRef && partyFields) batch.update(partyRef, partyFields);
-    await batch.commit();
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
+      const partyDoc = partyRef ? await tx.get(partyRef) : null;
+
+      const invMap = {};
+      uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null }; });
+
+      if (ret.returnType === 'customer') {
+        ret.items.forEach(item => {
+          const e = invMap[item.medId]; if (!e.data) return;
+          let batches = [...(e.data.batches || [])];
+          let remaining = item.qty;
+          batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; }).filter(b => b.stock > 0);
+          e.data.batches = batches;
+        });
+      } else {
+        ret.items.forEach(item => {
+          const e = invMap[item.medId]; if (!e.data) return;
+          const batches = [...(e.data.batches || [])];
+          if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
+          else batches.push({ batchId: 'BAT-VOID-' + Date.now(), expiry: '', stock: item.qty, cost: item.purchasePrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
+          e.data.batches = batches;
+        });
+      }
+
+      let partyFields = null;
+      if (partyRef && partyDoc && partyDoc.exists) {
+        if (ret.returnType === 'customer') {
+          partyFields = { due: round2((partyDoc.data().due || 0) + ret.amount) };
+        } else {
+          partyFields = { totalPayable: round2((partyDoc.data().totalPayable || 0) + ret.amount) };
+        }
+      }
+
+      // ✅ সব write পরে
+      tx.delete(userCol('returns').doc(ret.returnId));
+      Object.values(invMap).forEach(e => {
+        if (!e.data) return;
+        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
+        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true });
+      });
+      if (partyRef && partyFields) tx.update(partyRef, partyFields);
+    });
+
     return { success: true, message: 'রিটার্ন মুছে ফেলা হয়েছে, প্রভাব উল্টানো হয়েছে।' };
   } catch (err) { return { success: false, message: err.message }; }
 }
