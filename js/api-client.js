@@ -192,28 +192,40 @@ async function apiSubmitSale(sale) {
     const invRefs = sale.items.map(item => userCol('inventory').doc(item.medId));
     const hasCustomer = sale.customerId && sale.customerId !== 'WALK_IN';
     const custRef = hasCustomer ? userCol('customers').doc(sale.customerId) : null;
-    const [invDocs, custDoc] = await Promise.all([Promise.all(invRefs.map(r => cget(r))), custRef ? cget(custRef) : Promise.resolve(null)]);
 
-    const invUpdates = [];
-    for (let i = 0; i < sale.items.length; i++) {
-      const item = sale.items[i], invDoc = invDocs[i];
-      if (!invDoc.exists) return { success: false, message: `"${item.name}" ইনভেন্টরিতে পাওয়া যায়নি।` };
-      const result = computeFEFODeduction(invDoc.data(), item.qty);
-      if (!result) return { success: false, message: `"${item.name}" স্টক অপর্যাপ্ত।` };
-      invUpdates.push({ ref: invRefs[i], fields: result });
-    }
-    let custUpdate = null;
-    if (custRef && custDoc && custDoc.exists) {
-      const c = custDoc.data();
-      custUpdate = { due: round2((c.due || 0) + (sale.due || 0)), totalPaid: round2((c.totalPaid || 0) + (sale.cashPaid || 0)) };
-    }
-    const batch = fbDb.batch();
-    batch.set(userCol('sales').doc(sale.invoiceNo), sale);
-    invUpdates.forEach(u => batch.update(u.ref, u.fields));
-    if (custRef && custUpdate) batch.update(custRef, custUpdate);
-    await batch.commit();
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ transaction-এর সব read আগে (Firestore-এর নিয়ম — write শুরুর আগে সব read শেষ করতে হয়)
+      const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
+      const custDoc = custRef ? await tx.get(custRef) : null;
+
+      const invUpdates = [];
+      for (let i = 0; i < sale.items.length; i++) {
+        const item = sale.items[i], invDoc = invDocs[i];
+        if (!invDoc.exists) throw new Error(`"${item.name}" ইনভেন্টরিতে পাওয়া যায়নি।`);
+        const result = computeFEFODeduction(invDoc.data(), item.qty);
+        if (!result) throw new Error(`"${item.name}" স্টক অপর্যাপ্ত।`);
+        invUpdates.push({ ref: invRefs[i], fields: result });
+      }
+
+      let custUpdate = null;
+      if (custRef && custDoc && custDoc.exists) {
+        const c = custDoc.data();
+        custUpdate = {
+          due: round2((c.due || 0) + (sale.due || 0)),
+          totalPaid: round2((c.totalPaid || 0) + (sale.cashPaid || 0)),
+        };
+      }
+
+      // ✅ সব write এখন — read-এর পরে
+      tx.set(userCol('sales').doc(sale.invoiceNo), sale);
+      invUpdates.forEach(u => tx.update(u.ref, u.fields));
+      if (custRef && custUpdate) tx.update(custRef, custUpdate);
+    });
+
     return { success: true, message: `বিক্রয় সফল! Invoice: ${sale.invoiceNo}` };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
 }
 
 async function apiDeleteSale(sale) {
