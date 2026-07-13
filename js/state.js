@@ -18,6 +18,8 @@ const APP_STATE = {
   phone: '',
   address: '',
   lowStockLevel: 10,
+  historyCutoff: '',
+  olderHistoryLoaded: false,
 
   medicines: [],
   customers: [],
