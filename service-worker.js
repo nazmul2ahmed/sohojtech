@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v6'; // ✅ JS/CSS/HTML সবসময় network-first, শুধু আইকন cache-first — তাই এটা বাড়ানো এখন থেকে জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
+const CACHE_NAME = 'sohojtech-shell-v8'; // ✅ JS/CSS/HTML সবসময় network-first (cache-busting query সহ), শুধু আইকন cache-first — তাই এখন থেকে এটা বাড়ানো জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
@@ -27,7 +27,7 @@ const PRECACHE_URLS = [
 // ══════════════════════════════════════════════════════════
 const STATIC_ASSET_PATHS = new Set(
   ['./assets/icons/icon-192.png', './assets/icons/icon-512.png']
-    .map((u) => new URL(u, self.location.origin).pathname)
+    .map((u) => new URL(u, self.location.href).pathname)
 );
 
 // ══════════════════════════════════════════════════════════
@@ -103,13 +103,13 @@ function networkFirstWithTimeout(request) {
 
     const timer = setTimeout(async () => {
       if (settled) return;
-      const cached = await caches.match(request);
+      const cached = await caches.match(request, { ignoreSearch: true });
       if (cached) { settled = true; resolve(cached); }
       // cache-ও miss হলে এখানে কিছু resolve হবে না — নিচের fetch().then/.catch
       // যখনই শেষ হবে তখন resolve হবে, UI hang না করে।
     }, NETWORK_TIMEOUT_MS);
 
-    fetch(request).then((res) => {
+    fetch(request, { cache: 'no-store' }).then((res) => {
       if (res.ok) {
         const clone = res.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
@@ -119,7 +119,7 @@ function networkFirstWithTimeout(request) {
       if (!settled) {
         settled = true;
         clearTimeout(timer);
-        const cached = await caches.match(request);
+        const cached = await caches.match(request, { ignoreSearch: true });
         resolve(cached || Response.error());
       }
     });
