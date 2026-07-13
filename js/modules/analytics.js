@@ -8,17 +8,24 @@ function renderAnalyticsModule() {
   APP_STATE.anaTo = APP_STATE.anaTo || today;
 
   c.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
-      <div class="flex items-center gap-2"><label class="text-xs font-semibold text-slate-500">থেকে</label>
-        <input type="date" id="ana-from" value="${APP_STATE.anaFrom}" onchange="onAnaDateChange()" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
-      <div class="flex items-center gap-2"><label class="text-xs font-semibold text-slate-500">পর্যন্ত</label>
-        <input type="date" id="ana-to" value="${APP_STATE.anaTo}" onchange="onAnaDateChange()" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
-      <button onclick="setAnaRange(6)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৭ দিন</button>
-      <button onclick="setAnaRange(29)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৩০ দিন</button>
-      <button onclick="setAnaRange(89)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৯০ দিন</button>
+  <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
+    <div class="flex items-center gap-2"><label class="text-xs font-semibold text-slate-500">থেকে</label>
+      <input type="date" id="ana-from" value="${APP_STATE.anaFrom}" onchange="onAnaDateChange()" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
+    <div class="flex items-center gap-2"><label class="text-xs font-semibold text-slate-500">পর্যন্ত</label>
+      <input type="date" id="ana-to" value="${APP_STATE.anaTo}" onchange="onAnaDateChange()" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
+    <button onclick="setAnaRange(6)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৭ দিন</button>
+    <button onclick="setAnaRange(29)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৩০ দিন</button>
+    <button onclick="setAnaRange(89)" class="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300">৯০ দিন</button>
+    <div class="ml-auto">
+      ${APP_STATE.olderHistoryLoaded
+        ? `<span class="text-xs text-emerald-600 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i>সম্পূর্ণ হিস্টোরি লোড হয়েছে</span>`
+        : `<button id="load-older-history-btn" onclick="loadOlderHistory()" class="px-3 py-1.5 text-xs border border-brand text-brand rounded-lg font-semibold">
+             <i class="fa-solid fa-clock-rotate-left mr-1"></i> ১২ মাসের আগের হিস্টোরি লোড করুন
+           </button>`}
     </div>
-    <div id="ana-body"></div>
-  `;
+  </div>
+  <div id="ana-body"></div>
+`;
   renderAnaBody();
 }
 
@@ -150,4 +157,43 @@ function renderAnaBody() {
       </div>
     </div>
   `;
+}
+
+// ────────────────────────────────────────────────────────────
+// LOAD OLDER HISTORY — cutoff-এর আগের ডেটা on-demand
+// ────────────────────────────────────────────────────────────
+async function loadOlderHistory() {
+  const btn = document.getElementById('load-older-history-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> লোড হচ্ছে...'; }
+
+  try {
+    const res = await apiGetOlderHistory();
+    if (!res.success) {
+      toast('পুরনো হিস্টোরি লোড ব্যর্থ: ' + res.message, 'w');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> ১২ মাসের আগের হিস্টোরি লোড করুন'; }
+      return;
+    }
+    mergeOlderHistoryIntoState(res);
+    APP_STATE.olderHistoryLoaded = true;
+    toast('পুরনো হিস্টোরি লোড হয়েছে।', 's');
+    renderAnalyticsModule();
+  } catch (err) {
+    showFatalError('পুরনো হিস্টোরি লোডে সমস্যা:\n' + err.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> ১২ মাসের আগের হিস্টোরি লোড করুন'; }
+  }
+}
+
+// ✅ Duplicate-safe merge — ID-ভিত্তিক Set ফিল্টারিং
+function mergeOlderHistoryIntoState(data) {
+  const mergeArr = (existing, incoming, idField) => {
+    const existingIds = new Set(existing.map(x => x[idField]));
+    const newItems = incoming.filter(x => !existingIds.has(x[idField]));
+    return existing.concat(newItems);
+  };
+  APP_STATE.sales = mergeArr(APP_STATE.sales, data.sales, 'invoiceNo');
+  APP_STATE.purchases = mergeArr(APP_STATE.purchases, data.purchases, 'purchaseId');
+  APP_STATE.returns = mergeArr(APP_STATE.returns, data.returns, 'returnId');
+  APP_STATE.expenses = mergeArr(APP_STATE.expenses, data.expenses, 'id');
+  APP_STATE.payments = mergeArr(APP_STATE.payments, data.payments, 'paymentId');
+  APP_STATE.supplierPayments = mergeArr(APP_STATE.supplierPayments, data.supplierPayments, 'paymentId');
 }
