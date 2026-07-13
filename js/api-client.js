@@ -585,12 +585,32 @@ async function apiDeleteOpeningEntry(entry) {
 // ────────────────────────────────────────────────────────────
 // getCompleteData — ✅ এটাও cache-first (অফলাইনে app বুট করতেও দ্রুত/নির্ভরযোগ্য হবে)
 // ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
+// HISTORY CUTOFF HELPER — ১২ মাসের boundary
+// ────────────────────────────────────────────────────────────
+function getCutoffDateStr() {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 1);
+  return d.toISOString().split('T')[0];
+}
+
+// ────────────────────────────────────────────────────────────
+// getCompleteData — ✅ ধাপ ২: ৬টা হিস্টোরি কালেকশনে ১২ মাসের cutoff
+// (medicines/customers/suppliers/inventory/openingEntries পুরোটাই লোড হয়,
+//  কারণ এগুলো master data, তারিখ-ভিত্তিক নয়)
+// ────────────────────────────────────────────────────────────
 async function apiGetCompleteData() {
   try {
+    const cutoff = getCutoffDateStr();
     const [medSnap, custSnap, supSnap, invSnap, saleSnap, purSnap, retSnap, expSnap, paySnap, supPaySnap, obSnap, settingsDoc] = await Promise.all([
       cget2(userCol('medicines')), cget2(userCol('customers')), cget2(userCol('suppliers')), cget2(userCol('inventory')),
-      cget2(userCol('sales')), cget2(userCol('purchases')), cget2(userCol('returns')), cget2(userCol('expenses')),
-      cget2(userCol('payments')), cget2(userCol('supplierPayments')), cget2(userCol('openingEntries')),
+      cget2(userCol('sales').where('date', '>=', cutoff)),
+      cget2(userCol('purchases').where('date', '>=', cutoff)),
+      cget2(userCol('returns').where('date', '>=', cutoff)),
+      cget2(userCol('expenses').where('date', '>=', cutoff)),
+      cget2(userCol('payments').where('date', '>=', cutoff)),
+      cget2(userCol('supplierPayments').where('date', '>=', cutoff)),
+      cget2(userCol('openingEntries')),
       cgetDoc(userCol('config').doc('settings')),
     ]);
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
@@ -604,9 +624,35 @@ async function apiGetCompleteData() {
       openingEntries: obSnap.docs.map(d => d.data()),
       pharmacyName: settings.pharmacyName || 'আমার ফার্মেসি', ownerName: settings.ownerName || '',
       phone: settings.phone || '', address: settings.address || '', lowStockLevel: settings.lowStockLevel || 10,
+      historyCutoff: cutoff,
     };
   } catch (err) {
     return { success: false, message: err.message, medicines: [], customers: [], suppliers: [], inventory: [], sales: [], purchases: [], returns: [], expenses: [], payments: [], supplierPayments: [], openingEntries: [] };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ২: পুরনো (cutoff-এর আগের) হিস্টোরি on-demand লোড
+// ────────────────────────────────────────────────────────────
+async function apiGetOlderHistory() {
+  try {
+    const cutoff = APP_STATE.historyCutoff || getCutoffDateStr();
+    const [saleSnap, purSnap, retSnap, expSnap, paySnap, supPaySnap] = await Promise.all([
+      cget2(userCol('sales').where('date', '<', cutoff)),
+      cget2(userCol('purchases').where('date', '<', cutoff)),
+      cget2(userCol('returns').where('date', '<', cutoff)),
+      cget2(userCol('expenses').where('date', '<', cutoff)),
+      cget2(userCol('payments').where('date', '<', cutoff)),
+      cget2(userCol('supplierPayments').where('date', '<', cutoff)),
+    ]);
+    return {
+      success: true,
+      sales: saleSnap.docs.map(d => d.data()), purchases: purSnap.docs.map(d => d.data()),
+      returns: retSnap.docs.map(d => d.data()), expenses: expSnap.docs.map(d => d.data()),
+      payments: paySnap.docs.map(d => d.data()), supplierPayments: supPaySnap.docs.map(d => d.data()),
+    };
+  } catch (err) {
+    return { success: false, message: err.message };
   }
 }
 // ── FULL RESET — সব subcollection মুছে ফেলে, profile/subscription অক্ষুণ্ণ থাকে ──
