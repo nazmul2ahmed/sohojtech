@@ -3,15 +3,12 @@
 function userCol(name) {
   return fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection(name);
 }
-// ✅ সব internal read এখন cache থেকে — অফলাইনে হ্যাং হবে না, অনলাইনেও দ্রুত হবে
+
 async function cget(ref) {
-  try {
-    return await ref.get({ source: 'cache' });
-  } catch (e) {
-    // ✅ নতুন ব্রাউজার/ডিভাইসে cache খালি থাকলে (প্রথম লগইন) ডকুমেন্ট cache-এ
-    // এখনো sync না হওয়ায় এই read throw করে — তখন server থেকে fallback নেয়।
-    return ref.get();
-  }
+  // ✅ ফিক্স: source:'cache' জোর করা বাদ দেওয়া হলো। enablePersistence() চালু
+  // থাকায় .get() নিজে থেকেই: অনলাইনে server থেকে fresh ডেটা আনে, অফলাইনে
+  // স্বয়ংক্রিয়ভাবে cache-এ fallback করে। এতে মাল্টি-ডিভাইস stale-read বাগ থাকে না।
+  return ref.get();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -631,16 +628,12 @@ async function apiResetAllData() {
 }
 // collection query cache-first, খালি cache হলে fallback default (প্রথমবার অনলাইন বুট দরকার)
 async function cget2(colRef) {
-  try {
-    const snap = await colRef.get({ source: 'cache' });
-    if (!snap.empty) return snap;
-    return colRef.get();
-  } catch (e) { return colRef.get(); }
+  return colRef.get();
 }
 async function cgetDoc(ref) {
-  try { return await ref.get({ source: 'cache' }); }
-  catch (e) { return ref.get(); }
+  return ref.get();
 }
+
 // ── GLOBAL MEDICINE MASTER (২১k তালিকা) ──
 async function apiSearchGlobalMedicines(prefix) {
   try {
