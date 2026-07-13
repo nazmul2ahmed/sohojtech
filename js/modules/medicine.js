@@ -303,14 +303,33 @@ function openGlobalMedSearch() {
 }
 
 let gmSearchTimer = null;
+let gmSearchToken = 0; // ✅ প্রতিটা নতুন সার্চ-এর নিজস্ব token, stale রেসপন্স আটকাতে
+
 function onGlobalMedSearch(val) {
   clearTimeout(gmSearchTimer);
+  const myToken = ++gmSearchToken; // ✅ এই কলের token লক করে রাখা হলো
+
   gmSearchTimer = setTimeout(async () => {
     const box = document.getElementById('gm-search-results');
-    if (val.trim().length < 2) { box.innerHTML = ''; return; }
+    if (val.trim().length < 2) {
+      if (myToken === gmSearchToken) box.innerHTML = '';
+      return;
+    }
+
+    // ✅ লোডিং স্পিনার দেখানোর আগেও token চেক — এর মাঝে আরেকটা কল শুরু হয়ে থাকলে
+    // এই পুরনো কল স্পিনার দেখিয়ে পরে সেই নতুন কলের রেজাল্ট মুছে দেবে না
+    if (myToken !== gmSearchToken) return;
     box.innerHTML = '<div class="text-center text-xs text-slate-400 py-4"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+
     const res = await apiSearchGlobalMedicines(val);
-    if (!res.success || !res.results.length) { box.innerHTML = '<div class="text-center text-xs text-slate-400 py-4">পাওয়া যায়নি</div>'; return; }
+
+    // ✅ মূল গার্ড — await শেষে token এখনো সর্বশেষ কিনা যাচাই
+    if (myToken !== gmSearchToken) return;
+
+    if (!res.success || !res.results.length) {
+      box.innerHTML = '<div class="text-center text-xs text-slate-400 py-4">পাওয়া যায়নি</div>';
+      return;
+    }
     box.innerHTML = res.results.map(m => `
       <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/50">
         <div><div class="text-sm font-semibold">${esc(m.brand)}</div><div class="text-[11px] text-slate-400">${esc(m.generic||'')} • ${esc(m.doseForm||'')} ${esc(m.strength||'')} • ${esc(m.manufacturer||'')}</div></div>
