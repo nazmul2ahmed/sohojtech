@@ -4,6 +4,8 @@
 // INVENTORY MODULE — ব্যাচ-ভিত্তিক স্টক ভিউ (FEFO)
 // ════════════════════════════════════════════════════════════
 
+let invSearchDebounce = null;
+
 function renderInventoryModule() {
   const c = document.getElementById('inventory-content');
   if (!c) return;
@@ -39,7 +41,8 @@ function renderInventoryModule() {
 
 function onInvSearch(val) {
   APP_STATE.invSearch = val;
-  renderInvTable();
+  clearTimeout(invSearchDebounce);
+  invSearchDebounce = setTimeout(renderInvTable, 150);
 }
 
 function toggleInvBatches(medId) {
