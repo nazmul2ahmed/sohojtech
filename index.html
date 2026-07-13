@@ -215,8 +215,61 @@
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('service-worker.js')
-        .then(() => toast('অফলাইন মোড সক্রিয় হয়েছে।', 's'))
+        .then((reg) => {
+          toast('অফলাইন মোড সক্রিয় হয়েছে।', 's');
+
+          // ✅ নতুন ভার্সন ইতিমধ্যে "waiting" অবস্থায় থাকলে (পেজ খোলা
+          // থাকা অবস্থায় ডিপ্লয় হয়ে গেলে) সাথে সাথে ব্যানার দেখান
+          if (reg.waiting) showUpdateBanner(reg.waiting);
+
+          // ✅ নতুন SW install হয়ে "waiting" অবস্থায় গেলে ব্যানার দেখান
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                showUpdateBanner(newWorker);
+              }
+            });
+          });
+        })
         .catch((err) => showFatalError('Service Worker রেজিস্ট্রেশন ব্যর্থ:\n' + err.message));
+
+      // ✅ ব্যবহারকারী "এখনই আপডেট করুন" চাপলে নতুন SW activate হবে,
+      // এবং activate সম্পন্ন হলে পেজ একবার রিলোড হবে যাতে নতুন কোড চালু হয়।
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+    });
+  }
+
+  function showUpdateBanner(waitingWorker) {
+    if (document.getElementById('sw-update-banner')) return; // একবারই দেখাবে
+
+    const banner = document.createElement('div');
+    banner.id = 'sw-update-banner';
+    banner.className = 'fixed bottom-0 inset-x-0 z-[9999] bg-slate-900 dark:bg-slate-700 text-white px-4 py-3 flex items-center justify-center gap-4 shadow-lg flex-wrap';
+    banner.innerHTML = `
+      <span class="text-sm">অ্যাপের নতুন আপডেট এসেছে।</span>
+      <button id="sw-update-btn" class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg">
+        এখনই আপডেট করুন
+      </button>
+      <button id="sw-update-dismiss" class="text-slate-300 hover:text-white text-sm underline">
+        পরে
+      </button>
+    `;
+    document.body.appendChild(banner);
+
+    document.getElementById('sw-update-btn').addEventListener('click', () => {
+      waitingWorker.postMessage('SKIP_WAITING');
+      banner.remove();
+    });
+    document.getElementById('sw-update-dismiss').addEventListener('click', () => {
+      banner.remove();
+      // "পরে" চাপলে পরের বার অ্যাপ খোলা/রিলোড হলে আবার জিজ্ঞেস করবে
     });
   }
 </script>
