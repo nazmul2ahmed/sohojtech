@@ -8,6 +8,8 @@
 // APP_STATE-এ optimistic লোকাল আপডেটও একইসাথে হয় (তাৎক্ষণিক UI রিফ্রেশ)।
 // ════════════════════════════════════════════════════════════
 
+let medSearchDebounce = null;
+
 function isEnglishBrand(str) {
   return /^[A-Za-z0-9\s\-\+\.\/()]+$/.test(String(str || '').trim());
 }
@@ -75,7 +77,8 @@ function renderMedicineModule() {
 
 function onMedSearch(val) {
   APP_STATE.medSearch = val;
-  renderMedTable();
+  clearTimeout(medSearchDebounce);
+  medSearchDebounce = setTimeout(renderMedTable, 150);
 }
 
 function renderMedTable() {
