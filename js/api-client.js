@@ -172,13 +172,26 @@ async function apiDeleteSupplier(supId) {
 async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, amount, note, supData) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
-    if (amount > currentPayable + 0.01) return { success: false, message: `পাওনার (৳${fmt(currentPayable)}) চেয়ে বেশি দেওয়া যাবে না।` };
     const supRef = userCol('suppliers').doc(supId);
     const paymentId = 'SPAY-' + Date.now();
-    const batch = fbDb.batch();
-    batch.set(supRef, { id: supId, name: supData.name, phone: supData.phone || '', address: supData.address || '', totalPayable: round2(currentPayable - amount), totalPaid: round2(currentTotalPaid + amount) }, { merge: true });
-    batch.set(userCol('supplierPayments').doc(paymentId), { paymentId, date: todayStr(), supplierId: supId, supplierName: supData.name, amount, note: note || 'পাওনা পরিশোধ' });
-    await batch.commit();
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ ফিক্স: currentPayable প্যারামিটার (client-side stale ডেটা) আর ব্যবহার হচ্ছে না
+      // হিসাবে — transaction-এর ভেতরে fresh read করে সেটা থেকেই ভ্যালিডেশন ও হিসাব হচ্ছে
+      const supDoc = await tx.get(supRef);
+      if (!supDoc.exists) throw new Error('সরবরাহকারী পাওয়া যায়নি।');
+      const s = supDoc.data();
+      const freshPayable = s.totalPayable || 0;
+      const freshTotalPaid = s.totalPaid || 0;
+
+      if (amount > freshPayable + 0.01) {
+        throw new Error(`পাওনার (৳${fmt(freshPayable)}) চেয়ে বেশি দেওয়া যাবে না।`);
+      }
+
+      tx.set(supRef, { id: supId, name: supData.name, phone: supData.phone || '', address: supData.address || '', totalPayable: round2(freshPayable - amount), totalPaid: round2(freshTotalPaid + amount) }, { merge: true });
+      tx.set(userCol('supplierPayments').doc(paymentId), { paymentId, date: todayStr(), supplierId: supId, supplierName: supData.name, amount, note: note || 'পাওনা পরিশোধ' });
+    });
+
     return { success: true, message: `৳${fmt(amount)} পরিশোধ করা হয়েছে।` };
   } catch (err) { return { success: false, message: err.message }; }
 }
