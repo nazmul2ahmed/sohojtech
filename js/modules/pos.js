@@ -358,8 +358,7 @@ async function submitPOSSale() {
 
     validItems.forEach(item => deductStockFEFO(item.medId, item.qty));
     if (customer) {
-      if (due > 0) customer.due = round2(customer.due + due);
-      if (cashPaid > 0) customer.totalPaid = round2(customer.totalPaid + cashPaid);
+      applyCustomerDueChange(custId, due, cashPaid);
     }
     APP_STATE.sales.push(sale);
 
@@ -458,8 +457,7 @@ async function deleteSaleConfirm(invoiceNo) {
     if (!res.success) return toast(res.message, 'w');
     sale.items.forEach(item => restockItem(item.medId, item.qty, item.costPrice));
     if (sale.customerId !== 'WALK_IN') {
-      const c = APP_STATE.customers.find(x => x.id === sale.customerId);
-      if (c) { c.due = Math.max(0, round2(c.due - sale.due)); c.totalPaid = Math.max(0, round2(c.totalPaid - sale.cashPaid)); }
+      applyCustomerDueChange(sale.customerId, -sale.due, -sale.cashPaid);
     }
     APP_STATE.sales = APP_STATE.sales.filter(s => s.invoiceNo !== invoiceNo);
     toast(res.message, 's');
