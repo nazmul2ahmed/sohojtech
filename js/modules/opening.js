@@ -133,14 +133,10 @@ async function submitOpeningEntry() {
       batchId: 'BAT-OB-' + Date.now(),
     });
   } else if (cat === 'গ্রাহক বাকি') {
-    const cliId = sdGetValue('sd-ob-client');
-    if (!cliId) return showObError('গ্রাহক নির্বাচন করুন।');
-    entry.clientId = cliId;
-  } else if (cat === 'সরবরাহকারী বাকি') {
-    const supId = sdGetValue('sd-ob-sup');
-    if (!supId) return showObError('সরবরাহকারী নির্বাচন করুন।');
-    entry.supplierId = supId;
-  }
+      applyCustomerDueChange(entry.clientId, amount, 0);
+    } else if (cat === 'সরবরাহকারী বাকি') {
+      applySupplierPayableChange(entry.supplierId, amount, 0);
+    }
 
   try {
     const res = await apiSubmitOpeningEntry(entry);
@@ -232,11 +228,9 @@ async function deleteOpeningEntry(entryId) {
       const inv = APP_STATE.inventory.find(m => m.medId === entry.medicineId);
       if (inv) { inv.batches = inv.batches.filter(b => b.batchId !== entry.batchId); recalcInventoryRow(inv); }
     } else if (entry.category === 'গ্রাহক বাকি' && entry.clientId) {
-      const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
-      if (customer) customer.due = Math.max(0, round2(customer.due - entry.amount));
+      applyCustomerDueChange(entry.clientId, -entry.amount, 0);
     } else if (entry.category === 'সরবরাহকারী বাকি' && entry.supplierId) {
-      const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
-      if (supplier) supplier.totalPayable = Math.max(0, round2(supplier.totalPayable - entry.amount));
+      applySupplierPayableChange(entry.supplierId, -entry.amount, 0);
     }
 
     APP_STATE.openingEntries = APP_STATE.openingEntries.filter(e => e.entryId !== entryId);
