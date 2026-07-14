@@ -187,8 +187,8 @@ function openBatchEdit(medId, batchId) {
   modal.id = 'batch-edit-modal';
   modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
   modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full">
-      <h4 class="font-bold text-slate-800 dark:text-white mb-1">ব্যাচ এডিট — ${esc(inv.brand)}</h4>
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+     <h4 class="font-bold text-slate-800 dark:text-white mb-1">ব্যাচ এডিট — ${esc(inv.brand)}</h4>
       <p class="text-xs text-slate-400 mb-4 font-mono">${esc(batchId)}</p>
       <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-4">
         <i class="fa-solid fa-triangle-exclamation mr-1"></i> স্টক সংশোধন সাবধানে করুন — এটা সরাসরি ইনভেন্টরি পরিবর্তন করবে।
