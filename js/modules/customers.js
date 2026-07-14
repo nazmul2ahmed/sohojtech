@@ -126,7 +126,7 @@ function openCustomerForm(custId) {
   modal.id = 'customer-form-modal';
   modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
   modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full">
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
       <h4 class="font-bold text-slate-800 dark:text-white mb-1">${isEdit ? 'গ্রাহক এডিট' : 'নতুন গ্রাহক'}</h4>
       ${isEdit ? `<p class="text-xs text-slate-400 mb-4 font-mono">${esc(cust.id)}</p>` : `<p class="text-xs text-slate-400 mb-4">ID অটো-জেনারেট হবে</p>`}
       <div id="cust-form-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-4"></div>
@@ -236,8 +236,8 @@ function openCollectDue(custId) {
   modal.id = 'collect-due-modal';
   modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
   modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-sm w-full">
-      <h4 class="font-bold text-slate-800 dark:text-white mb-1">বাকি আদায় — ${esc(cust.name)}</h4>
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto">
+     <h4 class="font-bold text-slate-800 dark:text-white mb-1">বাকি আদায় — ${esc(cust.name)}</h4>
       <p class="text-xs text-slate-400 mb-4">বর্তমান বাকি: <span class="font-mono font-bold text-red-600">৳${fmt(cust.due)}</span></p>
       <div id="cd-form-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-4"></div>
       <div class="mb-4">
