@@ -354,8 +354,8 @@ async function submitPurchase() {
     validItems.forEach(item => addPurchaseBatch(item, date));
     APP_STATE.purchases.push(purchase);
     if (supplier) {
-      if (payType === 'বাকি') supplier.totalPayable = round2(supplier.totalPayable + totalCost);
-      else supplier.totalPaid = round2(supplier.totalPaid + totalCost);
+      if (payType === 'বাকি') applySupplierPayableChange(supId, totalCost, 0);
+      else applySupplierPayableChange(supId, 0, totalCost);
     }
 
     toast(res.message, 's');
@@ -456,8 +456,8 @@ async function deletePurchaseConfirm(purchaseId) {
       const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
       if (inv) { inv.batches = inv.batches.filter(b => b.batchId !== item.batchId); recalcInventoryRow(inv); }
     });
-    const sup = APP_STATE.suppliers.find(s => s.id === pur.supplierId);
-    if (sup) { if (pur.paymentType === 'বাকি') sup.totalPayable = Math.max(0, round2(sup.totalPayable - pur.totalCost)); else sup.totalPaid = Math.max(0, round2(sup.totalPaid - pur.totalCost)); }
+    if (pur.paymentType === 'বাকি') applySupplierPayableChange(pur.supplierId, -pur.totalCost, 0);
+    else applySupplierPayableChange(pur.supplierId, 0, -pur.totalCost);
     APP_STATE.purchases = APP_STATE.purchases.filter(p => p.purchaseId !== purchaseId);
     toast(res.message, 's');
     renderTodayPurchases();
