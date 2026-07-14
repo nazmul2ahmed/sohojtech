@@ -37,7 +37,20 @@ const APP_STATE = {
   returns: [],
   openingEntries: [],
   retMode: 'customer',
+
+  // ════════════════════════════════════════════════════════════
+  // B2B Ad/Affiliate — namespaced state
+  // কোনো actual ফিচার এখনো নেই। এই অবজেক্টে অন্য কোনো মডিউল থেকে
+  // সরাসরি APP_STATE.ads.xxx = ... লেখা নিষেধ — js/modules/ads.js-এর
+  // পাবলিক হেল্পার ফাংশন (নিচে দেখুন) দিয়েই বদলাতে হবে।
+  // ════════════════════════════════════════════════════════════
+  ads: {
+    enabled: false,     // ফিচার-ফ্ল্যাগ — true না করা পর্যন্ত nav-এ ট্যাব দেখাবে না
+    campaigns: [],      // ভবিষ্যতে: [{ id, sponsorName, ... }]
+    settings: {},        // ভবিষ্যতে: প্রদর্শন-সংক্রান্ত সেটিংস
+  },
 };
+
 
 // ════════════════════════════════════════════════════════════
 // SIDEBAR NAVIGATION CONFIG
@@ -81,6 +94,12 @@ const NAV_CONFIG = [
     section: 'সেটিংস',
     items: [
       { id: 'settings', label: 'সেটিংস', icon: 'fa-gear' },
+    ],
+  },
+  {
+    section: 'B2B',
+    items: [
+      { id: 'ads', label: 'বিজ্ঞাপন/অ্যাফিলিয়েট', icon: 'fa-bullhorn' },
     ],
   },
 ];
