@@ -124,7 +124,7 @@ function openSupplierForm(supId) {
   modal.id = 'supplier-form-modal';
   modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
   modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full">
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
       <h4 class="font-bold text-slate-800 dark:text-white mb-1">${isEdit ? 'সরবরাহকারী এডিট' : 'নতুন সরবরাহকারী'}</h4>
       ${isEdit ? `<p class="text-xs text-slate-400 mb-4 font-mono">${esc(sup.id)}</p>` : `<p class="text-xs text-slate-400 mb-4">ID অটো-জেনারেট হবে</p>`}
       <div id="sup-form-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-4"></div>
@@ -234,7 +234,7 @@ function openPayPayable(supId) {
   modal.id = 'pay-payable-modal';
   modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
   modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-sm w-full">
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto">
       <h4 class="font-bold text-slate-800 dark:text-white mb-1">পাওনা পরিশোধ — ${esc(sup.name)}</h4>
       <p class="text-xs text-slate-400 mb-4">বর্তমান পাওনা: <span class="font-mono font-bold text-amber-600">৳${fmt(sup.totalPayable)}</span></p>
       <div id="pp-form-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-4"></div>
