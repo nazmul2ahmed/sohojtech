@@ -6,6 +6,39 @@
 
 let invSearchDebounce = null;
 
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ৭: স্টক মিউটেশন হেল্পার — এখন এখানে কেন্দ্রীভূত (আগে returns.js-এ
+// ছিল, কিন্তু আসলে এটাই এদের প্রকৃত জায়গা — inventory.js)।
+// এই তিনটা ফাংশন pos.js, purchase.js, returns.js, opening.js, settings.js
+// থেকে global scope-এ কল হয়।
+// ════════════════════════════════════════════════════════════
+function restockItem(medId, qty, cost) {
+  const inv = APP_STATE.inventory.find(m => m.medId === medId);
+  if (!inv) return;
+  if (inv.batches.length) { inv.batches[0].stock += qty; }
+  else { inv.batches.push({ batchId: 'BAT-RET-' + Date.now(), expiry: '', stock: qty, cost: cost || 0, mrp: 0, sell: inv.sellPrice }); }
+  recalcInventoryRow(inv);
+}
+function destockItem(medId, qty) {
+  const inv = APP_STATE.inventory.find(m => m.medId === medId);
+  if (!inv) return;
+  let remaining = qty;
+  inv.batches.sort((a, b) => (b.expiry || '0000') > (a.expiry || '0000') ? 1 : -1);
+  for (const b of inv.batches) { if (remaining <= 0) break; const take = Math.min(b.stock, remaining); b.stock -= take; remaining -= take; }
+  inv.batches = inv.batches.filter(b => b.stock > 0);
+  recalcInventoryRow(inv);
+}
+function recalcInventoryRow(inv) {
+  inv.totalStock = inv.batches.reduce((a, b) => a + b.stock, 0);
+  inv.costValue = round2(inv.batches.reduce((a, b) => a + b.cost * b.stock, 0));
+  inv.mrpValue = round2(inv.batches.reduce((a, b) => a + b.mrp * b.stock, 0));
+  inv.batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+  inv.nearestExpiry = inv.batches[0]?.expiry || '';
+  const med = APP_STATE.medicines.find(m => m.id === inv.medId);
+  const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+  inv.status = inv.totalStock === 0 ? 'out' : inv.totalStock <= reorderLevel ? 'low' : 'ok';
+}
+
 function renderInventoryModule() {
   const c = document.getElementById('inventory-content');
   if (!c) return;
@@ -196,7 +229,7 @@ function saveBatchEdit(medId, batchId) {
   batch.sell = parseFloat(document.getElementById('be-sell').value) || 0;
 
   inv.batches = inv.batches.filter(b => b.stock > 0);
-  recalcInventoryRow(inv); // returns.js-এ সংজ্ঞায়িত হেল্পার — পুনঃব্যবহার হচ্ছে
+  recalcInventoryRow(inv); // ✅ এখন এই ফাইলেই সংজ্ঞায়িত (উপরে দেখুন)
   if (batch.sell > 0) inv.sellPrice = batch.sell;
 
   toast('ব্যাচ আপডেট হয়েছে।', 's');
