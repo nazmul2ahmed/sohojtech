@@ -9,6 +9,18 @@ function genSupplierId() {
   return 'S-' + Date.now();
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅  totalPayable/totalPaid বদলানোর একমাত্র পাবলিক পথ —
+// অন্য মডিউল থেকে supplier.totalPayable = ... সরাসরি লেখার বদলে
+// এই ফাংশন কল করা উচিত। delta-ভিত্তিক, 0-এর নিচে যেতে বাধা দেয়।
+// ════════════════════════════════════════════════════════════
+function applySupplierPayableChange(supId, payableDelta = 0, totalPaidDelta = 0) {
+  const sup = APP_STATE.suppliers.find(s => s.id === supId);
+  if (!sup) return;
+  if (payableDelta !== 0) sup.totalPayable = Math.max(0, round2((sup.totalPayable || 0) + payableDelta));
+  if (totalPaidDelta !== 0) sup.totalPaid = Math.max(0, round2((sup.totalPaid || 0) + totalPaidDelta));
+}
+
 // ────────────────────────────────────────────────────────────
 // MAIN RENDER
 // ────────────────────────────────────────────────────────────
@@ -270,8 +282,7 @@ async function savePayPayable(supId) {
     const res = await apiPaySupplierPayable(supId, sup.totalPayable, sup.totalPaid || 0, amount, note, sup);
     if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'পরিশোধ করুন'; return; }
 
-    sup.totalPayable = round2(sup.totalPayable - amount);
-    sup.totalPaid = round2((sup.totalPaid || 0) + amount);
+    applySupplierPayableChange(supId, -amount, amount);
     APP_STATE.supplierPayments.push({
       paymentId: 'SPAY-' + Date.now(), date: todayStr(), supplierId: supId,
       supplierName: sup.name, amount, note: note || 'পাওনা পরিশোধ',
