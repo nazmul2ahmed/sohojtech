@@ -156,7 +156,7 @@ async function submitCustomerReturn(invoiceNo) {
     }
 
     items.forEach(item => restockItem(item.medId, item.qty, item.costPrice));
-    if (method === 'বাকি সমন্বয়') customer.due = round2(customer.due - amount);
+    if (method === 'বাকি সমন্বয়') applyCustomerDueChange(sale.customerId, -amount, 0);
     APP_STATE.returns.push(returnDoc);
 
     toast(res.message, 's');
@@ -276,7 +276,7 @@ async function submitSupplierReturn(purId) {
     }
 
     items.forEach(item => destockItem(item.medId, item.qty));
-    if (supPayableReduction > 0) supplier.totalPayable = Math.max(0, round2(supplier.totalPayable - amount));
+    if (supPayableReduction > 0) applySupplierPayableChange(pur.supplierId, -amount, 0);
     APP_STATE.returns.push(returnDoc);
 
     toast(res.message, 's');
@@ -323,10 +323,10 @@ async function deleteReturnConfirm(returnId) {
     if (!res.success) return toast(res.message, 'w');
     if (ret.returnType === 'customer') {
       ret.items.forEach(item => destockItem(item.medId, item.qty));
-      if (ret.refundMethod === 'বাকি সমন্বয়') { const c = APP_STATE.customers.find(x => x.id === ret.partyId); if (c) c.due = round2(c.due + ret.amount); }
+      if (ret.refundMethod === 'বাকি সমন্বয়') applyCustomerDueChange(ret.partyId, ret.amount, 0);
     } else {
       ret.items.forEach(item => restockItem(item.medId, item.qty, item.purchasePrice));
-      if (ret.reason === 'ফেরত' && ret.refundMethod === 'পাওনা সমন্বয়') { const s = APP_STATE.suppliers.find(x => x.id === ret.partyId); if (s) s.totalPayable = round2(s.totalPayable + ret.amount); }
+      if (ret.reason === 'ফেরত' && ret.refundMethod === 'পাওনা সমন্বয়') applySupplierPayableChange(ret.partyId, ret.amount, 0);
     }
     APP_STATE.returns = APP_STATE.returns.filter(r => r.returnId !== returnId);
     toast(res.message, 's');
