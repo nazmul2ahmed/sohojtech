@@ -11,6 +11,18 @@ function genCustomerId() {
   return 'C-' + Date.now();
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅  due/totalPaid বদলানোর একমাত্র পাবলিক পথ — অন্য মডিউল
+// থেকে customer.due = ... সরাসরি লেখার বদলে এই ফাংশন কল করা উচিত।
+// delta-ভিত্তিক (কত বাড়বে/কমবে), সবসময় 0-এর নিচে যেতে বাধা দেয়।
+// ════════════════════════════════════════════════════════════
+function applyCustomerDueChange(custId, dueDelta = 0, totalPaidDelta = 0) {
+  const cust = APP_STATE.customers.find(c => c.id === custId);
+  if (!cust) return;
+  if (dueDelta !== 0) cust.due = Math.max(0, round2((cust.due || 0) + dueDelta));
+  if (totalPaidDelta !== 0) cust.totalPaid = Math.max(0, round2((cust.totalPaid || 0) + totalPaidDelta));
+}
+
 // ────────────────────────────────────────────────────────────
 // MAIN RENDER
 // ────────────────────────────────────────────────────────────
@@ -272,8 +284,7 @@ async function saveCollectDue(custId) {
     const res = await apiCollectCustomerDue(custId, cust.due, cust.totalPaid || 0, amount, note, cust);
     if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'গ্রহণ করুন'; return; }
 
-    cust.due = round2(cust.due - amount);
-    cust.totalPaid = round2((cust.totalPaid || 0) + amount);
+    applyCustomerDueChange(custId, -amount, amount);
     APP_STATE.payments.push({
       paymentId: 'PAY-' + Date.now(), date: todayStr(), customerId: custId,
       customerName: cust.name, amount, note: note || 'বাকি আদায়',
