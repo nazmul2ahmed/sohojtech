@@ -54,7 +54,10 @@ function renderShell() {
 
 function renderSidebarNav() {
   const nav = document.getElementById('sidebar-nav');
-  const sections = NAV_CONFIG.filter(s => s.section !== 'প্রশাসন' || APP_STATE.isAdmin);
+  const sections = NAV_CONFIG.filter(s =>
+  (s.section !== 'প্রশাসন' || APP_STATE.isAdmin) &&
+  (s.section !== 'B2B' || APP_STATE.ads.enabled)
+);
   nav.innerHTML = sections.map(section => `
     <div>
       <div class="px-3 mb-1 text-[11px] font-semibold tracking-wider uppercase text-white/30">${esc(section.section)}</div>
@@ -186,6 +189,13 @@ function renderTabPanels() {
         <div id="admin-content"></div>
       </div>`;
     }
+    // ১৪. বিজ্ঞাপন/অ্যাফিলিয়েট (Ads) ট্যাব — ধাপ ৮ boilerplate
+    if (item.id === 'ads') {
+      return `<div id="tab-ads" class="tab-panel hidden tab-enter">
+        <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
+        <div id="ads-content"></div>
+      </div>`;
+    }
     // . বাকি সব ডিফল্ট/প্লেসহোল্ডার ট্যাব
     return `<div id="tab-${item.id}" class="tab-panel hidden tab-enter">
       <div class="mb-5">
@@ -255,6 +265,7 @@ function goTab(tabId) {
     if (tabId === 'accounts') { renderAccountsModule(); }
     if (tabId === 'settings') { renderSettingsModule(); }
     if (tabId === 'admin') { renderAdminModule(); }
+    if (tabId === 'ads') { renderAdsModule(); }
   } catch (err) {
     showFatalError('goTab("' + tabId + '") এ সমস্যা:\n' + err.message);
   }
