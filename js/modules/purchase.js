@@ -14,7 +14,13 @@ function renderPurchaseModule() {
   const container = document.getElementById('purchase-content');
   if (!container) return;
 
+  const offlineBanner = !navigator.onLine
+    ? `<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-3">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i> অফলাইন মোড: ক্রয় সংরক্ষিত হবে, নেট ফিরলে সিঙ্ক হবে।
+      </div>` : '';
+
   container.innerHTML = `
+    ${offlineBanner}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <!-- ══ ক্রয় ফর্ম ══ -->
       <div class="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
@@ -351,17 +357,21 @@ async function submitPurchase() {
       return;
     }
 
-    validItems.forEach(item => addPurchaseBatch(item, date));
-    APP_STATE.purchases.push(purchase);
-    if (supplier) {
-      if (payType === 'বাকি') applySupplierPayableChange(supId, totalCost, 0);
-      else applySupplierPayableChange(supId, 0, totalCost);
+    if (res.queued) {
+      toast(res.message, 'w');
+      resetPurchase();
+      refreshSyncBadge();
+    } else {
+      validItems.forEach(item => addPurchaseBatch(item, date));
+      APP_STATE.purchases.push(purchase);
+      if (supplier) {
+        if (payType === 'বাকি') applySupplierPayableChange(supId, totalCost, 0);
+        else applySupplierPayableChange(supId, 0, totalCost);
+      }
+      toast(res.message, 's');
+      resetPurchase();
+      renderTodayPurchases();
     }
-
-    toast(res.message, 's');
-    resetPurchase();
-    renderTodayPurchases();
-    // ✅ ফিক্স: সফল হওয়ার পরও বাটন স্বাভাবিক অবস্থায় ফেরানো হচ্ছে
     btn.disabled = false;
     btn.innerHTML = idleHTML;
   } catch (err) {
