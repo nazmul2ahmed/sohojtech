@@ -26,7 +26,9 @@ async function triggerSync() {
   }
 }
 
-const SYNC_TYPE_API_MAP = { sale: apiSubmitSale, purchase: apiSubmitPurchase };
+function getSyncTypeApiMap() {
+  return { sale: apiSubmitSale, purchase: apiSubmitPurchase };
+}
 
 async function processPendingQueue() {
   if (!navigator.onLine) return;
@@ -41,7 +43,7 @@ async function processPendingQueue() {
 
 async function attemptSync(entry) {
   await markSyncing(entry.tempId);
-  const apiFn = SYNC_TYPE_API_MAP[entry.type];
+  const apiFn = getSyncTypeApiMap()[entry.type];
   if (!apiFn) { await markFailed(entry.tempId, 'অজানা এন্ট্রি টাইপ: ' + entry.type); return; }
 
   try {
