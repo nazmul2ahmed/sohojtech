@@ -118,7 +118,7 @@ async function submitOpeningEntry() {
   const entry = { entryId: 'OB-' + Date.now(), date, category: cat, description: desc, amount };
   let med;
 
-  // --- ক্যাটাগরি অনুযায়ী ডাটা এক্সট্রাকশন ও ভ্যালিডেশন ---
+  // ক্যাটাগরি অনুযায়ী ডাটা এক্সট্রাকশন ও ভ্যালিডেশন
   if (cat === 'স্টক') {
     const medId = sdGetValue('sd-ob-med');
     if (!medId) return showObError('ওষুধ নির্বাচন করুন।');
@@ -135,22 +135,22 @@ async function submitOpeningEntry() {
     });
 
   } else if (cat === 'গ্রাহক বাকি') {
-    const clientId = sdGetValue('sd-ob-client'); // ড্রপডাউন থেকে গ্রাহকের ID নেওয়া
+    const clientId = sdGetValue('sd-ob-client');
     if (!clientId) return showObError('গ্রাহক নির্বাচন করুন।');
     entry.clientId = clientId;
 
   } else if (cat === 'সরবরাহকারী বাকি') {
-    const supplierId = sdGetValue('sd-ob-sup'); // ড্রপডাউন থেকে সরবরাহকারীর ID নেওয়া
+    const supplierId = sdGetValue('sd-ob-sup');
     if (!supplierId) return showObError('সরবরাহকারী নির্বাচন করুন।');
     entry.supplierId = supplierId;
   }
 
   try {
-    // ১. ডাটাবেজে ওপেং ব্যালেন্স এন্ট্রি পাঠানো
+    // ১. এপিআই কল
     const res = await apiSubmitOpeningEntry(entry);
     if (!res.success) return showObError(res.message);
 
-    // ২. এপিআই সফল হলে লোকাল ব্যালেন্স ও স্টেট আপডেট করা
+    // ২. লোকাল স্টেট এবং UI আপডেট (কোনো ডাবল ক্যালকুলেশন ছাড়াই)
     if (cat === 'স্টক') {
       let inv = APP_STATE.inventory.find(m => m.medId === entry.medicineId);
       if (!inv) { 
@@ -181,29 +181,26 @@ async function submitOpeningEntry() {
       recalcInventoryRow(inv);
 
     } else if (cat === 'গ্রাহক বাকি') {
-      // লোকাল স্টেট আপডেট
-      const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
-      if (customer) {
-        customer.due = round2((customer.due || 0) + amount);
-      }
-      // গ্রাহকের অ্যাকাউন্টে বাকি সমন্বয় ফাংশন কল
+      // ডাবল জমা এড়াতে শুধুমাত্র ১টি নিয়ম ব্যবহার করব। 
+      // যদি 'applyCustomerDueChange' সিস্টেমে থাকে, তবে এটিই একা সব আপডেট করবে।
       if (typeof applyCustomerDueChange === 'function') {
-        applyCustomerDueChange(entry.clientId, amount, 0);
+        applyCustomerDueChange(entry.clientId, amount, 0); 
+      } else {
+        // যদি ওই ফাংশনটি না থাকে, তবেই কেবল ম্যানুয়ালি আপডেট হবে
+        const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
+        if (customer) customer.due = round2((customer.due || 0) + amount);
       }
 
     } else if (cat === 'সরবরাহকারী বাকি') {
-      // লোকাল স্টেট আপডেট
-      const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
-      if (supplier) {
-        supplier.totalPayable = round2((supplier.totalPayable || 0) + amount);
-      }
-      // সরবরাহকারীর অ্যাকাউন্টে বাকি সমন্বয় ফাংশন কল
       if (typeof applySupplierPayableChange === 'function') {
         applySupplierPayableChange(entry.supplierId, amount, 0);
+      } else {
+        const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
+        if (supplier) supplier.totalPayable = round2((supplier.totalPayable || 0) + amount);
       }
     }
 
-    // ৩. মূল ওপেং এন্ট্রি লিস্টে পুশ করা এবং UI রিফ্রেশ
+    // ৩. ওপেং এন্ট্রি লিস্ট আপডেট ও ফর্ম ক্লিয়ার
     APP_STATE.openingEntries.push(entry);
     toast('Opening এন্ট্রি সংরক্ষিত হয়েছে!', 's');
     clearObForm();
@@ -272,11 +269,11 @@ async function deleteOpeningEntry(entryId) {
   if (!entry) return;
 
   try {
-    // ১. ডাটাবেজ থেকে এন্ট্রি মুছে ফেলা
+    // ১. ডাটাবেজ থেকে ডিলিট
     const res = await apiDeleteOpeningEntry(entry);
     if (!res.success) return toast(res.message, 'w');
 
-    // ২. লোকাল ইনভেন্টরি বা ব্যালেন্স রিভার্স এবং স্টেট আপডেট করা
+    // ২. লোকাল রিভার্সাল (সঠিক আইডি ধরে)
     if (entry.category === 'স্টক' && entry.batchId) {
       const inv = APP_STATE.inventory.find(m => m.medId === entry.medicineId);
       if (inv) { 
@@ -285,29 +282,25 @@ async function deleteOpeningEntry(entryId) {
       }
 
     } else if (entry.category === 'গ্রাহক বাকি' && entry.clientId) {
-      // লোকাল স্টেট (APP_STATE) থেকে বাকি কমানো
-      const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
-      if (customer) {
-        customer.due = round2((customer.due || 0) - entry.amount);
-      }
-      // ব্যালেন্স সমন্বয় ফাংশন কল করা (যেহেতু ডিলিট করছেন, তাই -entry.amount পাস করা সঠিক)
+      // ডাবল রিভার্স বা ভুল অ্যাকাউন্টে ডিলিট হওয়া আটকাতে:
       if (typeof applyCustomerDueChange === 'function') {
-        applyCustomerDueChange(entry.clientId, -entry.amount, 0);
+        // নতুন মান ০ এবং পুরাতন মান entry.amount দিলে ফাংশনটি স্বয়ংক্রিয়ভাবে মাইনাস করে নেবে
+        applyCustomerDueChange(entry.clientId, 0, entry.amount); 
+      } else {
+        const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
+        if (customer) customer.due = round2((customer.due || 0) - entry.amount);
       }
 
     } else if (entry.category === 'সরবরাহকারী বাকি' && entry.supplierId) {
-      // লোকাল স্টেট (APP_STATE) থেকে পাওনা কমানো
-      const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
-      if (supplier) {
-        supplier.totalPayable = round2((supplier.totalPayable || 0) - entry.amount);
-      }
-      // ব্যালেন্স সমন্বয় ফাংশন কল করা
       if (typeof applySupplierPayableChange === 'function') {
-        applySupplierPayableChange(entry.supplierId, -entry.amount, 0);
+        applySupplierPayableChange(entry.supplierId, 0, entry.amount);
+      } else {
+        const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
+        if (supplier) supplier.totalPayable = round2((supplier.totalPayable || 0) - entry.amount);
       }
     }
 
-    // ৩. মূল ওপেং এন্ট্রি লিস্ট থেকে বাদ দেওয়া এবং UI রিফ্রেশ
+    // ৩. স্টেট থেকে বাদ দেওয়া ও টেবিল রেন্ডার
     APP_STATE.openingEntries = APP_STATE.openingEntries.filter(e => e.entryId !== entryId);
     toast('এন্ট্রি মুছে ফেলা হয়েছে।', 's');
     renderObTable();
