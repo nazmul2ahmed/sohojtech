@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v8'; // ✅ JS/CSS/HTML সবসময় network-first (cache-busting query সহ), শুধু আইকন cache-first — তাই এখন থেকে এটা বাড়ানো জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
+const CACHE_NAME = 'sohojtech-shell-v9'; // ✅ JS/CSS/HTML সবসময় network-first (cache-busting query সহ), শুধু আইকন cache-first — তাই এখন থেকে এটা বাড়ানো জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
@@ -16,6 +16,8 @@ const PRECACHE_URLS = [
   './js/modules/returns.js', './js/modules/opening.js', './js/modules/inventory.js',
   './js/modules/medicine.js', './js/modules/customers.js', './js/modules/suppliers.js',
   './js/modules/accounts.js', './js/modules/settings.js', './js/modules/admin.js',
+  './js/modules/ads.js',
+  './js/db-indexeddb.js', './js/sync-engine.js',
   './js/auth.js', './js/api-client.js', './js/modules/analytics.js', './js/app.js',
   './assets/icons/icon-192.png', './assets/icons/icon-512.png',
 ];
