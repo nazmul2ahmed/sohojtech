@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v9'; // ✅ JS/CSS/HTML সবসময় network-first (cache-busting query সহ), শুধু আইকন cache-first — তাই এখন থেকে এটা বাড়ানো জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
+const CACHE_NAME = 'sohojtech-shell-v10'; // ✅ JS/CSS/HTML সবসময় network-first (cache-busting query সহ), শুধু আইকন cache-first — তাই এখন থেকে এটা বাড়ানো জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
