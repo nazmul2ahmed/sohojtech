@@ -10,8 +10,27 @@
 let _syncInProgress = false;
 
 function initSyncEngine() {
+  // ✅ ফিক্স: গত সেশনে (ট্যাব ক্র্যাশ/বন্ধ) যদি কোনো এন্ট্রি 'syncing'
+  // অবস্থায় আটকে থেকে যায়, সেটা এখন কেউ প্রসেস করছে না — তাই বুটেই
+  // সেগুলোকে 'queued'-এ ফিরিয়ে দেওয়া হচ্ছে, নাহলে চিরতরে আটকে থাকবে।
+  resetStuckSyncingEntries().finally(() => {
+    if (navigator.onLine) triggerSync();
+  });
+
+  // ✅ ফিক্স: শুধু 'online' ইভেন্টের উপর নির্ভর করা যথেষ্ট নয় — এটা মোবাইল
+  // ব্রাউজারে/DevTools সিমুলেশনে মাঝেমধ্যে fire হয় না। তাই একাধিক
+  // নিরাপত্তা-স্তর:
   window.addEventListener('online', () => triggerSync());
-  if (navigator.onLine) triggerSync(); // আগের সেশনের পেন্ডিং এন্ট্রি থাকলে বুটেই চেষ্টা
+
+  // ট্যাব আবার visible হলে (phone unlock, app switch থেকে ফিরে আসা)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && navigator.onLine) triggerSync();
+  });
+
+  // চূড়ান্ত নিরাপত্তা-নেট — প্রতি ২০ সেকেন্ডে হালকা চেক (শুধু pending
+  // থাকলে triggerSync() ভেতরে কিছু করে, নাহলে সাথে সাথে রিটার্ন করে —
+  // তাই এটা ব্যাটারি/ডেটা খরচ করে না)
+  setInterval(() => { if (navigator.onLine) triggerSync(); }, 20000);
 }
 
 async function triggerSync() {
@@ -125,11 +144,18 @@ async function openSyncPanel() {
   modal.innerHTML = `
     <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
       <h4 class="font-bold text-slate-800 dark:text-white mb-3"><i class="fa-solid fa-rotate mr-1"></i> অফলাইন সিঙ্ক তালিকা</h4>
+      ${navigator.onLine ? `<button id="sync-now-btn" class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm mb-3"><i class="fa-solid fa-rotate mr-1"></i> এখনই সিঙ্ক করুন</button>` : `<div class="text-center text-xs text-amber-600 mb-3"><i class="fa-solid fa-triangle-exclamation mr-1"></i> এখন অফলাইন — নেট ফিরলে সিঙ্ক হবে</div>`}
       <div id="sync-panel-list" class="space-y-2 mb-4"></div>
       <button onclick="document.getElementById('sync-panel-modal').remove()" class="w-full border border-slate-300 dark:border-slate-600 rounded-lg py-2 text-sm text-slate-600 dark:text-slate-300">বন্ধ করুন</button>
     </div>`;
   document.body.appendChild(modal);
   renderSyncPanelList(entries);
+
+  document.getElementById('sync-now-btn')?.addEventListener('click', async () => {
+    await triggerSync();
+    renderSyncPanelList(await getPendingWrites());
+    refreshSyncBadge();
+  });
 }
 
 function renderSyncPanelList(entries) {
