@@ -118,7 +118,6 @@ async function submitOpeningEntry() {
   const entry = { entryId: 'OB-' + Date.now(), date, category: cat, description: desc, amount };
   let med;
 
-  // ক্যাটাগরি অনুযায়ী ডাটা এক্সট্রাকশন ও ভ্যালিডেশন
   if (cat === 'স্টক') {
     const medId = sdGetValue('sd-ob-med');
     if (!medId) return showObError('ওষুধ নির্বাচন করুন।');
@@ -133,82 +132,35 @@ async function submitOpeningEntry() {
       expiryDate: document.getElementById('ob-expiry').value.trim(),
       batchId: 'BAT-OB-' + Date.now(),
     });
-
   } else if (cat === 'গ্রাহক বাকি') {
-    const clientId = sdGetValue('sd-ob-client');
-    if (!clientId) return showObError('গ্রাহক নির্বাচন করুন।');
-    entry.clientId = clientId;
-
-  } else if (cat === 'সরবরাহকারী বাকি') {
-    const supplierId = sdGetValue('sd-ob-sup');
-    if (!supplierId) return showObError('সরবরাহকারী নির্বাচন করুন।');
-    entry.supplierId = supplierId;
-  }
+      applyCustomerDueChange(entry.clientId, amount, 0);
+    } else if (cat === 'সরবরাহকারী বাকি') {
+      applySupplierPayableChange(entry.supplierId, amount, 0);
+    }
 
   try {
-    // ১. এপিআই কল
     const res = await apiSubmitOpeningEntry(entry);
     if (!res.success) return showObError(res.message);
 
-    // ২. লোকাল স্টেট এবং UI আপডেট (কোনো ডাবল ক্যালকুলেশন ছাড়াই)
     if (cat === 'স্টক') {
       let inv = APP_STATE.inventory.find(m => m.medId === entry.medicineId);
-      if (!inv) { 
-        inv = { 
-          medId: entry.medicineId, 
-          brand: med?.brand || '', 
-          doseForm: med?.doseForm || '', 
-          strength: med?.strength || '', 
-          totalStock: 0, 
-          costValue: 0, 
-          mrpValue: 0, 
-          sellPrice: entry.sellPrice, 
-          nearestExpiry: '', 
-          status: 'ok', 
-          batches: [] 
-        }; 
-        APP_STATE.inventory.push(inv); 
-      }
-      inv.batches.push({ 
-        batchId: entry.batchId, 
-        expiry: entry.expiryDate, 
-        stock: entry.qty, 
-        cost: entry.costPrice, 
-        mrp: entry.mrp, 
-        sell: entry.sellPrice 
-      });
+      if (!inv) { inv = { medId: entry.medicineId, brand: med?.brand || '', doseForm: med?.doseForm || '', strength: med?.strength || '', totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: entry.sellPrice, nearestExpiry: '', status: 'ok', batches: [] }; APP_STATE.inventory.push(inv); }
+      inv.batches.push({ batchId: entry.batchId, expiry: entry.expiryDate, stock: entry.qty, cost: entry.costPrice, mrp: entry.mrp, sell: entry.sellPrice });
       if (entry.sellPrice > 0) inv.sellPrice = entry.sellPrice;
       recalcInventoryRow(inv);
-
     } else if (cat === 'গ্রাহক বাকি') {
-      // ডাবল জমা এড়াতে শুধুমাত্র ১টি নিয়ম ব্যবহার করব। 
-      // যদি 'applyCustomerDueChange' সিস্টেমে থাকে, তবে এটিই একা সব আপডেট করবে।
-      if (typeof applyCustomerDueChange === 'function') {
-        applyCustomerDueChange(entry.clientId, amount, 0); 
-      } else {
-        // যদি ওই ফাংশনটি না থাকে, তবেই কেবল ম্যানুয়ালি আপডেট হবে
-        const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
-        if (customer) customer.due = round2((customer.due || 0) + amount);
-      }
-
+      const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
+      if (customer) customer.due = round2((customer.due || 0) + amount);
     } else if (cat === 'সরবরাহকারী বাকি') {
-      if (typeof applySupplierPayableChange === 'function') {
-        applySupplierPayableChange(entry.supplierId, amount, 0);
-      } else {
-        const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
-        if (supplier) supplier.totalPayable = round2((supplier.totalPayable || 0) + amount);
-      }
+      const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
+      if (supplier) supplier.totalPayable = round2((supplier.totalPayable || 0) + amount);
     }
 
-    // ৩. ওপেং এন্ট্রি লিস্ট আপডেট ও ফর্ম ক্লিয়ার
     APP_STATE.openingEntries.push(entry);
     toast('Opening এন্ট্রি সংরক্ষিত হয়েছে!', 's');
     clearObForm();
     renderObTable();
-
-  } catch (err) { 
-    showFatalError('Opening এন্ট্রি সংরক্ষণে সমস্যা:\n' + err.message); 
-  }
+  } catch (err) { showFatalError('Opening এন্ট্রি সংরক্ষণে সমস্যা:\n' + err.message); }
 }
 
 function clearObForm() {
@@ -269,43 +221,20 @@ async function deleteOpeningEntry(entryId) {
   if (!entry) return;
 
   try {
-    // ১. ডাটাবেজ থেকে ডিলিট
     const res = await apiDeleteOpeningEntry(entry);
     if (!res.success) return toast(res.message, 'w');
 
-    // ২. লোকাল রিভার্সাল (সঠিক আইডি ধরে)
     if (entry.category === 'স্টক' && entry.batchId) {
       const inv = APP_STATE.inventory.find(m => m.medId === entry.medicineId);
-      if (inv) { 
-        inv.batches = inv.batches.filter(b => b.batchId !== entry.batchId); 
-        recalcInventoryRow(inv); 
-      }
-
+      if (inv) { inv.batches = inv.batches.filter(b => b.batchId !== entry.batchId); recalcInventoryRow(inv); }
     } else if (entry.category === 'গ্রাহক বাকি' && entry.clientId) {
-      // ডাবল রিভার্স বা ভুল অ্যাকাউন্টে ডিলিট হওয়া আটকাতে:
-      if (typeof applyCustomerDueChange === 'function') {
-        // নতুন মান ০ এবং পুরাতন মান entry.amount দিলে ফাংশনটি স্বয়ংক্রিয়ভাবে মাইনাস করে নেবে
-        applyCustomerDueChange(entry.clientId, 0, entry.amount); 
-      } else {
-        const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
-        if (customer) customer.due = round2((customer.due || 0) - entry.amount);
-      }
-
+      applyCustomerDueChange(entry.clientId, -entry.amount, 0);
     } else if (entry.category === 'সরবরাহকারী বাকি' && entry.supplierId) {
-      if (typeof applySupplierPayableChange === 'function') {
-        applySupplierPayableChange(entry.supplierId, 0, entry.amount);
-      } else {
-        const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
-        if (supplier) supplier.totalPayable = round2((supplier.totalPayable || 0) - entry.amount);
-      }
+      applySupplierPayableChange(entry.supplierId, -entry.amount, 0);
     }
 
-    // ৩. স্টেট থেকে বাদ দেওয়া ও টেবিল রেন্ডার
     APP_STATE.openingEntries = APP_STATE.openingEntries.filter(e => e.entryId !== entryId);
     toast('এন্ট্রি মুছে ফেলা হয়েছে।', 's');
     renderObTable();
-
-  } catch (err) { 
-    showFatalError('এন্ট্রি মুছতে সমস্যা:\n' + err.message); 
-  }
+  } catch (err) { showFatalError('এন্ট্রি মুছতে সমস্যা:\n' + err.message); }
 }
