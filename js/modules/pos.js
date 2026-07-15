@@ -15,7 +15,13 @@ function renderPOSModule() {
   const container = document.getElementById('pos-content');
   if (!container) return;
 
+  const offlineBanner = !navigator.onLine
+    ? `<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-3">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i> অফলাইন মোড: স্টক সংখ্যা সর্বশেষ সিঙ্কের সময়কার, নিশ্চিত না। বিক্রয় সংরক্ষিত হবে, নেট ফিরলে সিঙ্ক হবে।
+      </div>` : '';
+
   container.innerHTML = `
+    ${offlineBanner}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
         <div class="flex items-center justify-between mb-4">
@@ -356,15 +362,20 @@ async function submitPOSSale() {
       return;
     }
 
-    validItems.forEach(item => deductStockFEFO(item.medId, item.qty));
-    if (customer) {
-      applyCustomerDueChange(custId, due, cashPaid);
+    if (res.queued) {
+      // ✅ অফলাইনে সংরক্ষিত — স্টক/বাকি তখনই আপডেট হবে না, sync সফল হলে
+      // sync-engine.js-এর applySyncedEntryToState() সেটা করবে
+      toast(res.message, 'w');
+      resetPOS();
+      refreshSyncBadge();
+    } else {
+      validItems.forEach(item => deductStockFEFO(item.medId, item.qty));
+      if (customer) applyCustomerDueChange(custId, due, cashPaid);
+      APP_STATE.sales.push(sale);
+      toast(res.message, 's');
+      resetPOS();
+      renderTodayPOSSales();
     }
-    APP_STATE.sales.push(sale);
-
-    toast(res.message, 's');
-    resetPOS();
-    renderTodayPOSSales();
     btn.disabled = false;
     btn.innerHTML = idleHTML;
   } catch (err) {
