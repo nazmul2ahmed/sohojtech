@@ -30,6 +30,8 @@ const APP_STATE = {
   expenses: [],
   payments: [],   // T_Payments শিটের সমতুল্য — বাকি আদায়ের রেকর্ড
   supplierPayments: [], // সরবরাহকারী পাওনা পরিশোধের রেকর্ড
+  pendingSales: [],       // অফলাইনে queue করা বিক্রয় (শুধু sync-badge-এর জন্য রেফারেন্স)
+  pendingPurchases: [],   // অফলাইনে queue করা ক্রয়
 
   // POS/Purchase draft cart (multi-item form state — পরে ব্যবহৃত হবে)
   posItems: [],
