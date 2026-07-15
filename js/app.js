@@ -22,6 +22,7 @@ function updateConnBadge(isOnline) {
 async function initApp() {
   setLoadingMessage('ডেটা লোড হচ্ছে...');
   updateConnBadge(navigator.onLine);
+  initSyncDB().catch(err => console.warn('SyncDB init ব্যর্থ:', err));
   try {
     const data = await apiGetCompleteData();
     if (!data.success) {
