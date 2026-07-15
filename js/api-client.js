@@ -210,7 +210,16 @@ function computeFEFODeduction(invData, qty) {
 }
 
 async function apiSubmitSale(sale) {
-  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  if (!navigator.onLine) {
+    try {
+      await queueWrite({ type: 'sale', payload: sale });
+      APP_STATE.pendingSales = APP_STATE.pendingSales || [];
+      APP_STATE.pendingSales.push(sale);
+      return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Invoice: ${sale.invoiceNo}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+    } catch (err) {
+      return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
+    }
+  }
   try {
     const invRefs = sale.items.map(item => userCol('inventory').doc(item.medId));
     const hasCustomer = sale.customerId && sale.customerId !== 'WALK_IN';
@@ -297,7 +306,16 @@ async function apiDeleteSale(sale) {
 // PURCHASE
 // ────────────────────────────────────────────────────────────
 async function apiSubmitPurchase(purchase) {
-  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  if (!navigator.onLine) {
+    try {
+      await queueWrite({ type: 'purchase', payload: purchase });
+      APP_STATE.pendingPurchases = APP_STATE.pendingPurchases || [];
+      APP_STATE.pendingPurchases.push(purchase);
+      return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Purchase: ${purchase.purchaseId}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+    } catch (err) {
+      return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
+    }
+  }
   try {
     const invRefs = purchase.items.map(item => userCol('inventory').doc(item.medId));
     const supRef = userCol('suppliers').doc(purchase.supplierId);
