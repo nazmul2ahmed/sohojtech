@@ -55,17 +55,17 @@ function renderMedicineModule() {
     </div>
 
     <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-      <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center gap-3 flex-wrap">
+      <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-capsules text-brand mr-1"></i> ওষুধ মাস্টার তালিকা</h5>
-        <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
           <input type="text" id="med-search" placeholder="ওষুধ খুঁজুন..." value="${esc(APP_STATE.medSearch)}"
             oninput="onMedSearch(this.value)"
-            class="flex-1 sm:flex-none w-full sm:w-56 px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
+            class="w-full sm:w-56 px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
           <div class="flex items-center gap-2">
-            <button onclick="openMedicineForm(null)" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
+            <button onclick="openMedicineForm(null)" class="flex-1 sm:flex-none bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
               <i class="fa-solid fa-plus mr-1"></i> নতুন ওষুধ
             </button>
-            <button onclick="openGlobalMedSearch()" class="border border-brand text-brand text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
+            <button onclick="openGlobalMedSearch()" class="flex-1 sm:flex-none border border-brand text-brand text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
             <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Master থেকে আমদানি
             </button>
           </div>
