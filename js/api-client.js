@@ -18,7 +18,10 @@ async function apiAddMedicine(data) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const id = data.id || ('MED-' + Date.now());
-    await userCol('medicines').doc(id).set({
+    const ref = userCol('medicines').doc(id);
+    const existing = await cget(ref);
+    if (existing.exists) return { success: false, message: '"' + id + '" ইতোমধ্যে আছে — পুনরায় চেষ্টা করুন।' };
+    await ref.set({
       id, brand: data.brand || '', generic: data.generic || '', doseForm: data.doseForm || '',
       strength: data.strength || '', manufacturer: data.manufacturer || '', category: data.category || '',
       unit: data.unit || 'পাতা', reorderLevel: parseInt(data.reorderLevel) || 10,
