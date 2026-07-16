@@ -66,9 +66,11 @@ async function attemptSync(entry) {
   if (!apiFn) { await markFailed(entry.tempId, 'অজানা এন্ট্রি টাইপ: ' + entry.type); return; }
 
   try {
-    // ✅ এই মুহূর্তে navigator.onLine === true, তাই apiSubmitSale/Purchase
-    // এখন real Firestore transaction পথেই যাবে (queue করবে না আবার)
-    const res = await apiFn(entry.payload);
+    // ✅ ফিক্স: isRetry:true পাঠানো হচ্ছে — এই কল sync-queue থেকে retry,
+    // তাই connectivity ব্যর্থ হলে apiSubmitSale/apiSubmitPurchase আবার
+    // queue করবে না (duplicate entry এড়াতে), শুধু failed রিটার্ন করবে —
+    // যেটা নিচে markFailed()-এ যাবে, পরের অটো-সাইকেলে আবার চেষ্টা হবে।
+    const res = await apiFn(entry.payload, { isRetry: true });
     if (res.success) {
       applySyncedEntryToState(entry);
       await removePendingWrite(entry.tempId);
