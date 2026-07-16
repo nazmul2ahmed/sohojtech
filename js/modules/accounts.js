@@ -111,7 +111,15 @@ function buildLedgerEntries(dateStr) {
 
   (APP_STATE.returns || []).filter(r => r.date === dateStr).forEach(r => {
     if (r.returnType === 'customer') {
-      entries.push({ type: 'expense', category: 'রিটার্ন (কাস্টমার)', desc: r.refName + ' — ' + r.refId, amount: r.amount, deletable: false });
+      // ✅ ফিক্স (ধাপ ১৪): refundMethod চেক করা হচ্ছে — সাপ্লায়ার রিটার্নের
+      // ব্লকের মতোই। 'নগদ ফেরত' হলে প্রকৃত ক্যাশ আউটফ্লো (expense), কিন্তু
+      // 'বাকি সমন্বয়' হলে শুধু গ্রাহকের বাকি কমে, কোনো টাকা হাতবদল হয় না —
+      // তাই সেটা নন-ক্যাশ 'তথ্য' এন্ট্রি, Dashboard-এর P&L লজিকের সাথে সামঞ্জস্যপূর্ণ।
+      if (r.refundMethod === 'নগদ ফেরত') {
+        entries.push({ type: 'expense', category: 'রিটার্ন (কাস্টমার, নগদ)', desc: r.refName + ' — ' + r.refId, amount: r.amount, deletable: false });
+      } else {
+        entries.push({ type: 'info', category: 'রিটার্ন (কাস্টমার, বাকি সমন্বয়)', desc: r.refName + ' — নগদ প্রভাব নেই', amount: r.amount, deletable: false });
+      }
     } else if (r.reason === 'ধ্বংস') {
       entries.push({ type: 'expense', category: 'এক্সপায়ারি রাইট-অফ', desc: r.refName + ' — ' + r.refId, amount: r.amount, deletable: false });
     } else if (r.refundMethod === 'নগদ ফেরত') {
