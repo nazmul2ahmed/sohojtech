@@ -204,20 +204,34 @@ function renderObTable() {
     body.innerHTML = `<div class="px-5 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-clock-rotate-left text-2xl opacity-30 mb-2 block"></i>কোনো এন্ট্রি নেই</div>`;
     return;
   }
-  body.innerHTML = entries.slice().reverse().map(e => `
+  body.innerHTML = entries.slice().reverse().map(e => {
+    // ✅ ফিক্স: ক্যাটাগরি অনুযায়ী প্রাসঙ্গিক নাম (গ্রাহক/সরবরাহকারী/ওষুধ) লুকআপ —
+    // আগে শুধু category badge + description দেখানো হতো, কার নামে এন্ট্রি সেটা বোঝা যেত না
+    let subjectName = '';
+    if (e.category === 'স্টক') {
+      subjectName = e.brand || '';
+    } else if (e.category === 'গ্রাহক বাকি') {
+      subjectName = APP_STATE.customers.find(c => c.id === e.clientId)?.name || '(গ্রাহক মুছে ফেলা হয়েছে)';
+    } else if (e.category === 'সরবরাহকারী বাকি') {
+      subjectName = APP_STATE.suppliers.find(s => s.id === e.supplierId)?.name || '(সরবরাহকারী মুছে ফেলা হয়েছে)';
+    }
+
+    return `
     <div class="px-4 py-3 border-t border-slate-100 dark:border-slate-700/50 flex justify-between items-center gap-2">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
           <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand/10 text-brand">${esc(e.category)}</span>
           <span class="text-xs text-slate-400">${esc(e.date)}</span>
         </div>
-        <div class="text-xs text-slate-500 mt-1 truncate">${esc(e.description || '—')}</div>
+        ${subjectName ? `<div class="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1 truncate">${esc(subjectName)}</div>` : ''}
+        <div class="text-xs text-slate-500 mt-0.5 truncate">${esc(e.description || '—')}</div>
       </div>
       <div class="text-right flex-shrink-0 flex items-center gap-2">
         <span class="font-mono font-bold text-sm text-slate-700 dark:text-slate-200">৳${fmt(e.amount)}</span>
         <button onclick="deleteOpeningEntry('${e.entryId}')" class="text-slate-400 hover:text-red-500"><i class="fa-solid fa-trash text-xs"></i></button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // ✅ Delete করলে সাইড-ইফেক্ট reverse হয়
