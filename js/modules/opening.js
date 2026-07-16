@@ -71,8 +71,8 @@ function renderOpeningModule() {
 function initObDropdowns() {
   const custOpts = APP_STATE.customers.map(c => ({ value: c.id, label: c.name, sub: c.phone || '' }));
   const supOpts = APP_STATE.suppliers.map(s => ({ value: s.id, label: s.name, sub: s.phone || '' }));
-  createSD('sd-ob-client', custOpts, () => {}, '— গ্রাহক খুঁজুন —');
-  createSD('sd-ob-sup', supOpts, () => {}, '— সরবরাহকারী খুঁজুন —');
+  createSD('sd-ob-client', custOpts, (v) => { APP_STATE.obSelectedClientId = v || null; }, '— গ্রাহক খুঁজুন —');
+  createSD('sd-ob-sup', supOpts, (v) => { APP_STATE.obSelectedSupplierId = v || null; }, '— সরবরাহকারী খুঁজুন —');
 }
 
 function onObCatChange() {
@@ -133,10 +133,16 @@ async function submitOpeningEntry() {
       batchId: 'BAT-OB-' + Date.now(),
     });
   } else if (cat === 'গ্রাহক বাকি') {
-      applyCustomerDueChange(entry.clientId, amount, 0);
-    } else if (cat === 'সরবরাহকারী বাকি') {
-      applySupplierPayableChange(entry.supplierId, amount, 0);
-    }
+    if (!APP_STATE.obSelectedClientId) return showObError('গ্রাহক নির্বাচন করুন।');
+    const customer = APP_STATE.customers.find(c => c.id === APP_STATE.obSelectedClientId);
+    if (!customer) return showObError('নির্বাচিত গ্রাহক খুঁজে পাওয়া যায়নি — আবার নির্বাচন করুন।');
+    entry.clientId = APP_STATE.obSelectedClientId;
+  } else if (cat === 'সরবরাহকারী বাকি') {
+    if (!APP_STATE.obSelectedSupplierId) return showObError('সরবরাহকারী নির্বাচন করুন।');
+    const supplier = APP_STATE.suppliers.find(s => s.id === APP_STATE.obSelectedSupplierId);
+    if (!supplier) return showObError('নির্বাচিত সরবরাহকারী খুঁজে পাওয়া যায়নি — আবার নির্বাচন করুন।');
+    entry.supplierId = APP_STATE.obSelectedSupplierId;
+  }
 
   try {
     const res = await apiSubmitOpeningEntry(entry);
@@ -149,11 +155,9 @@ async function submitOpeningEntry() {
       if (entry.sellPrice > 0) inv.sellPrice = entry.sellPrice;
       recalcInventoryRow(inv);
     } else if (cat === 'গ্রাহক বাকি') {
-      const customer = APP_STATE.customers.find(c => c.id === entry.clientId);
-      if (customer) customer.due = round2((customer.due || 0) + amount);
+      applyCustomerDueChange(entry.clientId, amount, 0);
     } else if (cat === 'সরবরাহকারী বাকি') {
-      const supplier = APP_STATE.suppliers.find(s => s.id === entry.supplierId);
-      if (supplier) supplier.totalPayable = round2((supplier.totalPayable || 0) + amount);
+      applySupplierPayableChange(entry.supplierId, amount, 0);
     }
 
     APP_STATE.openingEntries.push(entry);
@@ -169,6 +173,8 @@ function clearObForm() {
   onObCatChange();
   sdClear('sd-ob-client');
   sdClear('sd-ob-sup');
+  APP_STATE.obSelectedClientId = null;
+  APP_STATE.obSelectedSupplierId = null;
 }
 
 function showObError(msg) {
