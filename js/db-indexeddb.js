@@ -176,3 +176,42 @@ async function removePendingWrite(tempId) {
 async function discardFailedWrite(tempId) {
   return removePendingWrite(tempId);
 }
+
+// ────────────────────────────────────────────────────────────
+// RESET STUCK SYNCING ENTRIES — বুট-টাইমে কল হয়। গত সেশনে ট্যাব
+// ক্র্যাশ/বন্ধ হয়ে গেলে কোনো এন্ট্রি 'syncing' অবস্থায় আটকে থেকে
+// যেতে পারে (attemptSync() মাঝপথে থেমে গেছে, কখনো markFailed/
+// removePendingWrite কল হয়নি)। সেগুলোকে আবার 'queued'-এ ফিরিয়ে
+// দেওয়া হচ্ছে, নাহলে এই এন্ট্রি চিরকাল sync-এর যোগ্য বলে গণ্য
+// হবে না (processPendingQueue()-এর ফিল্টার status !== 'syncing'
+// এদের বাদ দিয়ে যাবে) — চিরতরে আটকে থাকবে।
+// ────────────────────────────────────────────────────────────
+async function resetStuckSyncingEntries() {
+  const db = await initSyncDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PENDING_STORE, 'readwrite');
+    const store = tx.objectStore(PENDING_STORE);
+    const index = store.index('status');
+    const req = index.openCursor(IDBKeyRange.only('syncing'));
+    let resetCount = 0;
+
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const entry = cursor.value;
+        entry.status = 'queued';
+        entry.lastError = null;
+        cursor.update(entry);
+        resetCount++;
+        cursor.continue();
+      }
+    };
+    req.onerror = () => reject(req.error);
+
+    tx.oncomplete = () => {
+      if (resetCount > 0) console.log(`SyncDB: ${resetCount}টা আটকে থাকা 'syncing' এন্ট্রি 'queued'-এ ফিরিয়ে দেওয়া হলো।`);
+      resolve(resetCount);
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
