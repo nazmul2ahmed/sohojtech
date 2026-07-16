@@ -26,13 +26,7 @@ function findDuplicateMedicine(brand, doseForm, strength, excludeId) {
 
 function genMedicineId(brand) {
   const slug = String(brand).toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 8) || 'MED';
-  let n = APP_STATE.medicines.length + 1;
-  let id = `MED-${slug}-${String(n).padStart(4, '0')}`;
-  while (APP_STATE.medicines.some(m => m.id === id)) {
-    n++;
-    id = `MED-${slug}-${String(n).padStart(4, '0')}`;
-  }
-  return id;
+  return `MED-${slug}-${Date.now()}`;
 }
 
 // ────────────────────────────────────────────────────────────
