@@ -200,6 +200,63 @@ async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, am
 }
 
 // ────────────────────────────────────────────────────────────
+// Connectivity-resilience হেল্পার
+// navigator.onLine === true হলেও প্রকৃত সংযোগ না থাকতে পারে (fake-online —
+// এয়ারপ্লেন মোড, ব্যর্থ WiFi ইত্যাদি)। Firestore transaction অফলাইনে
+// কাজ করে না (নরমাল write-এর মতো লোকাল queue হয় না), তাই client-side
+// timeout race বাধ্যতামূলক — নাহলে UI চিরকাল "প্রক্রিয়াকরণ হচ্ছে..." দেখাবে
+// এবং এন্ট্রি কোথাও সংরক্ষিত না হয়েই হারিয়ে যাবে।
+// ────────────────────────────────────────────────────────────
+const FIRESTORE_WRITE_TIMEOUT_MS = 10000;     // ১০ সেকেন্ড — এর বেশি অপেক্ষা করা হবে না
+
+class FirestoreTimeoutError extends Error {
+  constructor(msg) { super(msg); this.code = 'client-timeout'; }
+}
+
+function withTimeout(promise, ms) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new FirestoreTimeoutError('নির্ধারিত সময়ে সার্ভার সাড়া দেয়নি।')), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
+// navigator.onLine সত্য বলছে, কিন্তু transaction আসলে network-জনিত কারণে
+// ব্যর্থ হয়েছে কিনা তা শনাক্ত করে — যাতে এটাকে ব্যবসায়িক এরর (যেমন
+// "স্টক অপর্যাপ্ত") এর সাথে গুলিয়ে না ফেলি।
+function isConnectivityError(err) {
+  if (!err) return false;
+  const netCodes = ['unavailable', 'deadline-exceeded', 'cancelled', 'internal', 'unknown', 'aborted', 'resource-exhausted', 'client-timeout'];
+  if (err.code && netCodes.includes(err.code)) return true;
+  const msg = (err.message || '').toLowerCase();
+  return msg.includes('offline') || msg.includes('network') || msg.includes('backend didn') || msg.includes('failed to get document');
+}
+
+// অফলাইন-queue-এ পাঠানোর কমন লজিক — সরাসরি অফলাইন-ব্রাঞ্চ থেকেও,
+// আর fake-online fallback থেকেও — দুই জায়গা থেকেই ব্যবহৃত হবে
+async function queueSaleOffline(sale) {
+  try {
+    await queueWrite({ type: 'sale', payload: sale });
+    APP_STATE.pendingSales = APP_STATE.pendingSales || [];
+    APP_STATE.pendingSales.push(sale);
+    return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Invoice: ${sale.invoiceNo}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+  } catch (err) {
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
+  }
+}
+
+async function queuePurchaseOffline(purchase) {
+  try {
+    await queueWrite({ type: 'purchase', payload: purchase });
+    APP_STATE.pendingPurchases = APP_STATE.pendingPurchases || [];
+    APP_STATE.pendingPurchases.push(purchase);
+    return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Purchase: ${purchase.purchaseId}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+  } catch (err) {
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
 // SALE (POS)
 // ────────────────────────────────────────────────────────────
 function computeFEFODeduction(invData, qty) {
@@ -212,26 +269,34 @@ function computeFEFODeduction(invData, qty) {
   return { batches: rb, totalStock: rb.reduce((a, b) => a + b.stock, 0), costValue: round2(rb.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(rb.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: rb[0]?.expiry || '' };
 }
 
-async function apiSubmitSale(sale) {
+async function apiSubmitSale(sale, opts = {}) {
+  const isRetry = !!opts.isRetry;
+
   if (!navigator.onLine) {
-    try {
-      await queueWrite({ type: 'sale', payload: sale });
-      APP_STATE.pendingSales = APP_STATE.pendingSales || [];
-      APP_STATE.pendingSales.push(sale);
-      return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Invoice: ${sale.invoiceNo}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
-    } catch (err) {
-      return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
-    }
+    if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
+    return await queueSaleOffline(sale);
   }
+
   try {
     const invRefs = sale.items.map(item => userCol('inventory').doc(item.medId));
     const hasCustomer = sale.customerId && sale.customerId !== 'WALK_IN';
     const custRef = hasCustomer ? userCol('customers').doc(sale.customerId) : null;
+    const saleRef = userCol('sales').doc(sale.invoiceNo);
 
-    await fbDb.runTransaction(async (tx) => {
-      // ✅ transaction-এর সব read আগে (Firestore-এর নিয়ম — write শুরুর আগে সব read শেষ করতে হয়)
+    await withTimeout(fbDb.runTransaction(async (tx) => {
+      // ✅ transaction-এর সব read আগে (Firestore-এর নিয়ম)
+      // ✅ ফিক্স: saleRef-ও এখানে read হচ্ছে — এই invoiceNo আগেই কোনো
+      // পূর্ববর্তী (client-timeout-এ "ব্যর্থ" ধরে নেওয়া কিন্তু আসলে সার্ভারে
+      // পরে সফল হওয়া) চেষ্টায় commit হয়ে গিয়ে থাকলে, দ্বিতীয়বার স্টক/বাকি
+      // ডিডাকশন এড়াতে এই চেক আবশ্যক।
+      const existingSaleDoc = await tx.get(saleRef);
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const custDoc = custRef ? await tx.get(custRef) : null;
+
+      if (existingSaleDoc.exists) {
+        // ইতিমধ্যে সফলভাবে সংরক্ষিত — নিরাপদে no-op, ডাবল-ডিডাকশন রোধ
+        return;
+      }
 
       const invUpdates = [];
       for (let i = 0; i < sale.items.length; i++) {
@@ -252,13 +317,25 @@ async function apiSubmitSale(sale) {
       }
 
       // ✅ সব write এখন — read-এর পরে
-      tx.set(userCol('sales').doc(sale.invoiceNo), sale);
+      tx.set(saleRef, sale);
       invUpdates.forEach(u => tx.update(u.ref, u.fields));
       if (custRef && custUpdate) tx.update(custRef, custUpdate);
-    });
+    }), FIRESTORE_WRITE_TIMEOUT_MS);
 
     return { success: true, message: `বিক্রয় সফল! Invoice: ${sale.invoiceNo}` };
   } catch (err) {
+    if (isConnectivityError(err)) {
+      if (isRetry) {
+        // sync-queue থেকে retry — এখানে আবার queue করলে duplicate entry
+        // তৈরি হবে। 'failed' মার্ক হয়ে থাকুক, পরের auto-retry সাইকেলে
+        // আবার চেষ্টা হবে (processPendingQueue failed-ও রিট্রাই করে)।
+        return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
+      }
+      // ✅ মূল ফিক্স: navigator.onLine সত্য বলছে, কিন্তু আসল লেনদেন
+      // ব্যর্থ/টাইমআউট হয়েছে (fake-online) — এন্ট্রি হারানোর বদলে এখন
+      // অফলাইন queue-তে নিরাপদে সংরক্ষণ করা হচ্ছে।
+      return await queueSaleOffline(sale);
+    }
     return { success: false, message: err.message };
   }
 }
@@ -308,30 +385,36 @@ async function apiDeleteSale(sale) {
 // ────────────────────────────────────────────────────────────
 // PURCHASE
 // ────────────────────────────────────────────────────────────
-async function apiSubmitPurchase(purchase) {
+async function apiSubmitPurchase(purchase, opts = {}) {
+  const isRetry = !!opts.isRetry;
+
   if (!navigator.onLine) {
-    try {
-      await queueWrite({ type: 'purchase', payload: purchase });
-      APP_STATE.pendingPurchases = APP_STATE.pendingPurchases || [];
-      APP_STATE.pendingPurchases.push(purchase);
-      return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Purchase: ${purchase.purchaseId}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
-    } catch (err) {
-      return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
-    }
+    if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
+    return await queuePurchaseOffline(purchase);
   }
+
   try {
     const invRefs = purchase.items.map(item => userCol('inventory').doc(item.medId));
     const supRef = userCol('suppliers').doc(purchase.supplierId);
+    const purRef = userCol('purchases').doc(purchase.purchaseId);
 
-    await fbDb.runTransaction(async (tx) => {
+    await withTimeout(fbDb.runTransaction(async (tx) => {
       // ✅ সব read আগে
+      // ✅ ফিক্স: purRef read — একই কারণ apiSubmitSale-এর মতো, ডাবল
+      // স্টক/পাওনা এড়াতে
+      const existingPurDoc = await tx.get(purRef);
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const supDoc = await tx.get(supRef);
+
+      if (existingPurDoc.exists) {
+        // ইতিমধ্যে সফলভাবে সংরক্ষিত — no-op
+        return;
+      }
 
       const invUpdates = purchase.items.map((item, idx) => {
         const invDoc = invDocs[idx];
         const newBatch = { batchId: 'BAT-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000), expiry: item.expiryDate || '', stock: item.qty, cost: item.purchasePrice, mrp: item.mrp, sell: item.sellPrice || 0 };
-        item.batchId = newBatch.batchId; // ✅ delete-এর সময় সঠিক ব্যাচ খুঁজতে
+        item.batchId = newBatch.batchId; // delete-এর সময় সঠিক ব্যাচ খুঁজতে
         const existing = invDoc.exists ? invDoc.data() : null;
         const batches = [...(existing?.batches || []), newBatch].sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
         const totalStock = batches.reduce((a, b) => a + b.stock, 0);
@@ -347,13 +430,21 @@ async function apiSubmitPurchase(purchase) {
       }
 
       // ✅ সব write পরে
-      tx.set(userCol('purchases').doc(purchase.purchaseId), purchase);
+      tx.set(purRef, purchase);
       invUpdates.forEach(u => { if (u.exists) tx.update(u.ref, u.fields); else tx.set(u.ref, u.fields); });
       if (supUpdate) tx.update(supRef, supUpdate);
-    });
+    }), FIRESTORE_WRITE_TIMEOUT_MS);
 
     return { success: true, message: `ক্রয় রেকর্ড হয়েছে! Invoice: ${purchase.purchaseId}` };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) {
+    if (isConnectivityError(err)) {
+      if (isRetry) {
+        return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
+      }
+      return await queuePurchaseOffline(purchase);
+    }
+    return { success: false, message: err.message };
+  }
 }
 
 async function apiDeletePurchase(purchase) {
