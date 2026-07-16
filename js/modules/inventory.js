@@ -193,6 +193,7 @@ function openBatchEdit(medId, batchId) {
       <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-4">
         <i class="fa-solid fa-triangle-exclamation mr-1"></i> স্টক সংশোধন সাবধানে করুন — এটা সরাসরি ইনভেন্টরি পরিবর্তন করবে।
       </div>
+      <div id="be-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-4"></div>
       <div class="grid grid-cols-2 gap-3 mb-4">
         <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">বর্তমান স্টক</label>
           <input type="number" id="be-stock" value="${batch.stock}" min="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
@@ -206,7 +207,7 @@ function openBatchEdit(medId, batchId) {
           <input type="number" id="be-sell" value="${batch.sell}" min="0" step="0.01" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
       </div>
       <div class="flex gap-2">
-        <button onclick="saveBatchEdit('${medId}','${batchId}')" class="flex-1 bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">সংরক্ষণ করুন</button>
+        <button id="be-save-btn" onclick="saveBatchEdit('${medId}','${batchId}')" class="flex-1 bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">সংরক্ষণ করুন</button>
         <button onclick="closeBatchEdit()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
       </div>
     </div>`;
@@ -217,24 +218,50 @@ function closeBatchEdit() {
   document.getElementById('batch-edit-modal')?.remove();
 }
 
-function saveBatchEdit(medId, batchId) {
+async function saveBatchEdit(medId, batchId) {
   const inv = APP_STATE.inventory.find(m => m.medId === medId);
   const batch = inv?.batches.find(b => b.batchId === batchId);
   if (!batch) return;
 
-  batch.stock = parseInt(document.getElementById('be-stock').value) || 0;
-  batch.expiry = document.getElementById('be-expiry').value || '';
-  batch.cost = parseFloat(document.getElementById('be-cost').value) || 0;
-  batch.mrp = parseFloat(document.getElementById('be-mrp').value) || 0;
-  batch.sell = parseFloat(document.getElementById('be-sell').value) || 0;
+  const errEl = document.getElementById('be-error');
+  errEl.classList.add('hidden');
 
-  inv.batches = inv.batches.filter(b => b.stock > 0);
-  recalcInventoryRow(inv); // ✅ এখন এই ফাইলেই সংজ্ঞায়িত (উপরে দেখুন)
-  if (batch.sell > 0) inv.sellPrice = batch.sell;
+  const fields = {
+    stock: parseInt(document.getElementById('be-stock').value) || 0,
+    expiry: document.getElementById('be-expiry').value || '',
+    cost: parseFloat(document.getElementById('be-cost').value) || 0,
+    mrp: parseFloat(document.getElementById('be-mrp').value) || 0,
+    sell: parseFloat(document.getElementById('be-sell').value) || 0,
+  };
 
-  toast('ব্যাচ আপডেট হয়েছে।', 's');
-  closeBatchEdit();
-  renderInvTable();
+  const btn = document.getElementById('be-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'সংরক্ষণ হচ্ছে...';
+
+  try {
+    const res = await apiUpdateBatch(medId, batchId, fields);
+    if (!res.success) {
+      errEl.textContent = res.message;
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'সংরক্ষণ করুন';
+      return;
+    }
+
+    // ✅ Firestore write সফল হলেই local APP_STATE বদলানো হচ্ছে
+    Object.assign(batch, fields);
+    inv.batches = inv.batches.filter(b => b.stock > 0);
+    recalcInventoryRow(inv);
+    if (fields.sell > 0) inv.sellPrice = fields.sell;
+
+    toast('ব্যাচ আপডেট হয়েছে।', 's');
+    closeBatchEdit();
+    renderInvTable();
+  } catch (err) {
+    showFatalError('ব্যাচ সংরক্ষণে সমস্যা:\n' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'সংরক্ষণ করুন';
+  }
 }
 
 function statCard(label, val, icon, color) {
