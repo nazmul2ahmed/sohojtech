@@ -23,6 +23,8 @@ async function initApp() {
   setLoadingMessage('ডেটা লোড হচ্ছে...');
   updateConnBadge(navigator.onLine);
   initSyncDB().catch(err => console.warn('SyncDB init ব্যর্থ:', err));
+  initSyncEngine(); // ✅ ফিক্স (ধাপ ১২): আগে এই কলটাই ছিল না, তাই অফলাইন
+                     // queue নেট ফিরলেও কখনো স্বয়ংক্রিয়ভাবে সিঙ্ক হতো না।
   try {
     const data = await apiGetCompleteData();
     if (!data.success) {
