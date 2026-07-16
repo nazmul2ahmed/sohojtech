@@ -770,3 +770,51 @@ async function apiBulkUploadGlobalMedicines(rows, onProgress) {
     return { success: false, message: err.message };
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// INVENTORY BATCH EDIT — ✅ ধাপ ১৩: runTransaction() দিয়ে read-then-write,
+// আগে এই API-ই ছিল না, শুধু local APP_STATE বদলাত।
+// ────────────────────────────────────────────────────────────
+async function apiUpdateBatch(medId, batchId, fields) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    const invRef = userCol('inventory').doc(medId);
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ read আগে
+      const invDoc = await tx.get(invRef);
+      if (!invDoc.exists) throw new Error('ইনভেন্টরি রেকর্ড পাওয়া যায়নি।');
+      const inv = invDoc.data();
+
+      let found = false;
+      let batches = (inv.batches || []).map(b => {
+        if (b.batchId !== batchId) return b;
+        found = true;
+        return { ...b, ...fields };
+      });
+      if (!found) throw new Error('ব্যাচ খুঁজে পাওয়া যায়নি — সম্ভবত অন্য কোথাও থেকে ইতিমধ্যে মুছে ফেলা হয়েছে।');
+
+      batches = batches.filter(b => b.stock > 0);
+      batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+
+      const totalStock = batches.reduce((a, b) => a + b.stock, 0);
+      const costValue = round2(batches.reduce((a, b) => a + b.cost * b.stock, 0));
+      const mrpValue = round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0));
+      const nearestExpiry = batches[0]?.expiry || '';
+
+      const med = APP_STATE.medicines.find(m => m.id === medId);
+      const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+      const status = totalStock === 0 ? 'out' : totalStock <= reorderLevel ? 'low' : 'ok';
+
+      const updateFields = { batches, totalStock, costValue, mrpValue, nearestExpiry, status };
+      if (fields.sell > 0) updateFields.sellPrice = fields.sell; // ✅ purchase.js/opening.js-এর প্যাটার্নের মতো
+
+      // ✅ write পরে
+      tx.update(invRef, updateFields);
+    });
+
+    return { success: true, message: 'ব্যাচ আপডেট হয়েছে।' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
