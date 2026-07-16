@@ -145,7 +145,7 @@ function renderLedgerTable() {
   const netEl = document.getElementById('ledger-total-net');
   if (netEl) { netEl.textContent = (net < 0 ? '−' : '') + '৳' + fmt(Math.abs(net)); netEl.className = `text-lg font-extrabold font-mono ${net >= 0 ? 'text-emerald-600' : 'text-red-600'}`; }
 
-  const filtered = APP_STATE.ledgerTab === 'all' ? all : all.filter(e => e.type === APP_STATE.ledgerTab || (APP_STATE.ledgerTab === 'all'));
+
   const list = APP_STATE.ledgerTab === 'all' ? all : all.filter(e => e.type === APP_STATE.ledgerTab);
 
   if (!list.length) {
