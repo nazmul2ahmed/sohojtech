@@ -45,23 +45,29 @@ function setText(id, text) {
 }
 
 // ════════════════════════════════════════════════════════════
-// ইনভেন্টরি ডেরাইভড ফিল্ড — শেয়ার্ড হেল্পার
-// batches array থেকে totalStock/costValue/mrpValue/nearestExpiry/status
-// একসাথে ক্যালকুলেট করে। আগে এই লজিক inventory.js, pos.js, api-client.js —
-// তিন জায়গায় আলাদাভাবে (এবং কোথাও অসম্পূর্ণভাবে, status/nearestExpiry
-// বাদ দিয়ে) লেখা ছিল। stock<=0 ব্যাচ বাদ যায়, বাকিগুলো expiry অনুযায়ী
-// sorted থাকে (nearestExpiry এই sorted[0] থেকেই আসে)।
+// ✅ ধাপ ২৩: Inventory batch থেকে derived summary fields বের করার
+// কেন্দ্রীয় হেল্পার — totalStock/costValue/mrpValue/nearestExpiry/status
+// এই লজিক আগে inventory.js, pos.js, api-client.js — তিন জায়গায় আলাদাভাবে
+// duplicate ছিল, এখন এখান থেকেই সবাই ব্যবহার করবে (api-client.js-এর ছয়টা
+// ফাংশন এই ধাপে এটা ব্যবহার করছে; inventory.js/pos.js-এর নিজস্ব লোকাল
+// কপি এই ধাপে অক্ষত রাখা হয়েছে — সেটা আলাদা ঐচ্ছিক রিফ্যাক্টর)।
+//
+// batches: raw batch array (filter/sort করা নাও থাকতে পারে)
+// reorderLevel: এই ওষুধের নির্দিষ্ট বা global lowStockLevel
+// রিটার্ন করে: { batches (stock>0, expiry অনুযায়ী sorted), totalStock,
+//               costValue, mrpValue, nearestExpiry, status }
 // ════════════════════════════════════════════════════════════
 function computeInventoryDerivedFields(batches, reorderLevel) {
-  const validBatches = (batches || []).filter(b => (b.stock || 0) > 0);
-  validBatches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+  const filtered = (batches || []).filter(b => (b.stock || 0) > 0);
+  filtered.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
 
-  const totalStock = validBatches.reduce((a, b) => a + b.stock, 0);
-  const costValue = round2(validBatches.reduce((a, b) => a + b.cost * b.stock, 0));
-  const mrpValue = round2(validBatches.reduce((a, b) => a + b.mrp * b.stock, 0));
-  const nearestExpiry = validBatches[0]?.expiry || '';
+  const totalStock = filtered.reduce((a, b) => a + b.stock, 0);
+  const costValue = round2(filtered.reduce((a, b) => a + (b.cost || 0) * b.stock, 0));
+  const mrpValue = round2(filtered.reduce((a, b) => a + (b.mrp || 0) * b.stock, 0));
+  const nearestExpiry = filtered[0]?.expiry || '';
+
   const rl = reorderLevel || 10;
   const status = totalStock === 0 ? 'out' : totalStock <= rl ? 'low' : 'ok';
 
-  return { batches: validBatches, totalStock, costValue, mrpValue, nearestExpiry, status };
+  return { batches: filtered, totalStock, costValue, mrpValue, nearestExpiry, status };
 }
