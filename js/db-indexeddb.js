@@ -245,3 +245,39 @@ async function resetStuckSyncingEntries() {
     tx.onerror = () => reject(tx.error);
   });
 }
+
+// ────────────────────────────────────────────────────────────
+// CLEAR PENDING WRITES FOR CURRENT USER — ধাপ ১৯: "সম্পূর্ণ রিসেট"
+// ফিচারের সাথে কল হয়। শুধু বর্তমান uid-এর এন্ট্রি মুছবে (ধাপ ১৮-এর
+// uid-scoping ব্যবহার করে) — অন্য কোনো ইউজারের pending queue-তে হাত
+// দেবে না, এমনকি একই ডিভাইসে থাকলেও।
+// ────────────────────────────────────────────────────────────
+async function clearPendingWritesForUser() {
+  const uid = APP_STATE.currentUser?.uid;
+  if (!uid) return 0;
+
+  const db = await initSyncDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PENDING_STORE, 'readwrite');
+    const store = tx.objectStore(PENDING_STORE);
+    const index = store.index('uid');
+    const req = index.openCursor(IDBKeyRange.only(uid));
+    let deletedCount = 0;
+
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        cursor.delete();
+        deletedCount++;
+        cursor.continue();
+      }
+    };
+    req.onerror = () => reject(req.error);
+
+    tx.oncomplete = () => {
+      if (deletedCount > 0) console.log(`SyncDB: রিসেটের সময় ${deletedCount}টা pending sync এন্ট্রি মুছে ফেলা হলো।`);
+      resolve(deletedCount);
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
