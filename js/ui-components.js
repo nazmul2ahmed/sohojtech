@@ -160,3 +160,18 @@ function calcPress(k) {
   APP_STATE.calcExpr += k;
   disp.value = APP_STATE.calcExpr;
 }
+
+// ════════════════════════════════════════════════════════════
+// READ-ONLY GUARD — ধাপ ১৭: revoked/trial-expired/subscription-expired
+// ইউজারের জন্য সাবমিট/এডিট/ডিলিট ফাংশনের শুরুতে এক লাইনে বসবে।
+// true রিটার্ন মানে ব্লকড (ফাংশন এখানেই থেমে যাওয়া উচিত), false মানে
+// এগোনো যাবে। server-side Firestore rules-ই আসল নিরাপত্তা — এটা শুধু
+// raw permission-denied এরর মেসেজের বদলে বন্ধুত্বপূর্ণ বার্তা দেখানোর জন্য।
+// ════════════════════════════════════════════════════════════
+function guardReadOnly() {
+  if (APP_STATE.readOnly) {
+    toast('আপনার অ্যাকাউন্ট এখন শুধু পুরনো তথ্য দেখার (Read-Only) মোডে আছে — নতুন এন্ট্রি/পরিবর্তন করা যাবে না। সক্রিয় করতে মালিকের সাথে যোগাযোগ করুন।', 'w');
+    return true;
+  }
+  return false;
+}
