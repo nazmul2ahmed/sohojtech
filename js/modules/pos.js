@@ -347,7 +347,7 @@ async function submitPOSSale() {
 
   const customer = APP_STATE.customers.find(c => c.id === custId);
   const custName = custId === 'WALK_IN' ? 'নগদ গ্রাহক' : (customer?.name || custId);
-  const invoiceNo = genInvoiceNo(); // ✅ ফিক্স: কলিশন-প্রতিরোধী ID
+  const invoiceNo = genInvoiceNo(); // ✅ সংশোধন: কলিশন-প্রতিরোধী ID (আগের বার্তায় ভুলে বাদ পড়েছিল)
 
   const sale = {
     invoiceNo, date, customerId: custId, customerName: custName,
@@ -472,7 +472,7 @@ async function deleteSaleConfirm(invoiceNo) {
   try {
     const res = await apiDeleteSale(sale);
     if (!res.success) return toast(res.message, 'w');
-    // ✅ ফিক্স: item.consumedBatches পাস করা হচ্ছে — সঠিক ব্যাচে স্টক ফেরত
+    // ✅ সংশোধন: item.consumedBatches পাস করা হচ্ছে — সঠিক ব্যাচে স্টক ফেরত
     sale.items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
     if (sale.customerId !== 'WALK_IN') {
       applyCustomerDueChange(sale.customerId, -sale.due, -sale.cashPaid);
