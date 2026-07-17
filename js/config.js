@@ -18,8 +18,8 @@ const APP_CONFIG = {
 
   features: {
     firebaseAuth: true,
-    offlineSync: false,   // Phase E-তে সক্রিয় হবে
-    firestoreDb: true,     // ← নতুন
+    offlineSync: true,   // ✅ ধাপ ১০-২০: সম্পূর্ণ বাস্তবায়িত ও প্রোডাকশনে স্থিতিশীল
+    firestoreDb: true,
   },
 };
 
