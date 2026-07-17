@@ -41,6 +41,32 @@ function returnedQty(refId, medId, type) {
     .flatMap(r => r.items).filter(i => i.medId === medId).reduce((a, b) => a + b.qty, 0);
 }
 
+// ✅ নতুন (offset-নির্ভুল): মূল সেলের consumedBatches থেকে ঠিক returnQty পরিমাণ
+// batch-portion বের করে আনে — কিন্তু প্রথমে alreadyReturnedQty পরিমাণ FEFO
+// অর্ডারে "স্কিপ" করে, যাতে একই ইনভয়েসে একাধিক আংশিক রিটার্ন হলেও প্রতিবার
+// সঠিক (আগে-ফেরত-না-হওয়া) ব্যাচ-অংশটাই বাছাই হয়, কোনো ওভারল্যাপ ছাড়া।
+function extractConsumedBatchPortion(consumedBatches, alreadyReturnedQty, returnQty) {
+  if (!consumedBatches || !consumedBatches.length) return null;
+  let skip = alreadyReturnedQty;
+  let remaining = returnQty;
+  const portion = [];
+
+  for (const cb of consumedBatches) {
+    let availableQty = cb.qty;
+    if (skip > 0) {
+      if (skip >= availableQty) { skip -= availableQty; continue; }
+      availableQty -= skip;
+      skip = 0;
+    }
+    if (remaining <= 0) break;
+    const take = Math.min(availableQty, remaining);
+    if (take > 0) {
+      portion.push({ batchId: cb.batchId, qty: take, cost: cb.cost });
+      remaining -= take;
+    }
+  }
+  return portion.length ? portion : null;
+}
 // ════════════════════════════════════════════════════════════
 // CUSTOMER RETURN FORM
 // ════════════════════════════════════════════════════════════
@@ -127,7 +153,12 @@ async function submitCustomerReturn(invoiceNo) {
     const gross = qty * item.price;
     const lineAmt = round2(gross - gross * (item.discountPct || 0) / 100);
     amount += lineAmt; cost += qty * (item.costPrice || 0);
-    items.push({ medId: item.medId, name: item.name, qty, price: item.price, discountPct: item.discountPct, costPrice: item.costPrice });
+    items.push({
+      medId: item.medId, name: item.name, qty, price: item.price,
+      discountPct: item.discountPct, costPrice: item.costPrice,
+      // ✅ ফিক্স: already-returned অফসেট বাদ দিয়ে সঠিক consumedBatches অংশ
+      consumedBatches: extractConsumedBatchPortion(item.consumedBatches, already, qty),
+    });
   }
   if (!items.length) return showRetError('কমপক্ষে একটি ওষুধের পরিমাণ দিন।');
   amount = round2(amount);
@@ -156,7 +187,8 @@ async function submitCustomerReturn(invoiceNo) {
       return;
     }
 
-    items.forEach(item => restockItem(item.medId, item.qty, item.costPrice));
+    // ✅ ফিক্স: item.consumedBatches পাস করা হচ্ছে — সঠিক ব্যাচে স্টক ফেরত
+    items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
     if (method === 'বাকি সমন্বয়') applyCustomerDueChange(sale.customerId, -amount, 0);
     APP_STATE.returns.push(returnDoc);
 
@@ -325,7 +357,8 @@ async function deleteReturnConfirm(returnId) {
     const res = await apiDeleteReturn(ret);
     if (!res.success) return toast(res.message, 'w');
     if (ret.returnType === 'customer') {
-      ret.items.forEach(item => destockItem(item.medId, item.qty));
+      // ✅ ফিক্স: generic destockItem()-এর বদলে consumedBatches-সচেতন precise destock
+      ret.items.forEach(item => destockFromConsumed(item.medId, item.qty, item.consumedBatches));
       if (ret.refundMethod === 'বাকি সমন্বয়') applyCustomerDueChange(ret.partyId, ret.amount, 0);
     } else {
       ret.items.forEach(item => restockItem(item.medId, item.qty, item.purchasePrice));
