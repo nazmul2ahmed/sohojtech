@@ -761,26 +761,54 @@ async function apiSaveSettings(data) {
 async function apiSubmitOpeningEntry(entry) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
-    const batch = fbDb.batch();
-    batch.set(userCol('openingEntries').doc(entry.entryId), entry);
-    if (entry.category === 'স্টক') {
-      const invRef = userCol('inventory').doc(entry.medicineId);
-      const invDoc = await cget(invRef);
-      const existing = invDoc.exists ? invDoc.data() : null;
-      const newBatch = { batchId: entry.batchId, expiry: entry.expiryDate || '', stock: entry.qty, cost: entry.costPrice, mrp: entry.mrp, sell: entry.sellPrice };
-      const batches = [...(existing?.batches || []), newBatch];
-      const fields = { medId: entry.medicineId, brand: entry.brand || existing?.brand || '', doseForm: existing?.doseForm || '', strength: existing?.strength || '', batches, totalStock: batches.reduce((a, b) => a + b.stock, 0), costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: existing?.nearestExpiry || entry.expiryDate || '', sellPrice: entry.sellPrice > 0 ? entry.sellPrice : (existing?.sellPrice || 0), status: existing?.status || 'ok' };
-      if (invDoc.exists) batch.update(invRef, fields); else batch.set(invRef, fields);
-    } else if (entry.category === 'গ্রাহক বাকি') {
-      const custRef = userCol('customers').doc(entry.clientId);
-      const custDoc = await cget(custRef);
-      if (custDoc.exists) batch.update(custRef, { due: round2((custDoc.data().due || 0) + entry.amount) });
-    } else if (entry.category === 'সরবরাহকারী বাকি') {
-      const supRef = userCol('suppliers').doc(entry.supplierId);
-      const supDoc = await cget(supRef);
-      if (supDoc.exists) batch.update(supRef, { totalPayable: round2((supDoc.data().totalPayable || 0) + entry.amount) });
-    }
-    await batch.commit();
+    const entryRef = userCol('openingEntries').doc(entry.entryId);
+    const invRef = entry.category === 'স্টক' ? userCol('inventory').doc(entry.medicineId) : null;
+    const custRef = entry.category === 'গ্রাহক বাকি' ? userCol('customers').doc(entry.clientId) : null;
+    const supRef = entry.category === 'সরবরাহকারী বাকি' ? userCol('suppliers').doc(entry.supplierId) : null;
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDoc = invRef ? await tx.get(invRef) : null;
+      const custDoc = custRef ? await tx.get(custRef) : null;
+      const supDoc = supRef ? await tx.get(supRef) : null;
+
+      // ✅ কম্পিউট (কোনো write এখনো হয়নি)
+      let invFields = null, invExists = false;
+      if (invRef) {
+        const existing = invDoc.exists ? invDoc.data() : null;
+        const newBatch = { batchId: entry.batchId, expiry: entry.expiryDate || '', stock: entry.qty, cost: entry.costPrice, mrp: entry.mrp, sell: entry.sellPrice };
+        const batches = [...(existing?.batches || []), newBatch];
+        invFields = {
+          medId: entry.medicineId, brand: entry.brand || existing?.brand || '',
+          doseForm: existing?.doseForm || '', strength: existing?.strength || '',
+          batches,
+          totalStock: batches.reduce((a, b) => a + b.stock, 0),
+          costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)),
+          mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)),
+          nearestExpiry: existing?.nearestExpiry || entry.expiryDate || '',
+          sellPrice: entry.sellPrice > 0 ? entry.sellPrice : (existing?.sellPrice || 0),
+          status: existing?.status || 'ok',
+        };
+        invExists = invDoc.exists;
+      }
+
+      let custFields = null;
+      if (custRef && custDoc.exists) {
+        custFields = { due: round2((custDoc.data().due || 0) + entry.amount) };
+      }
+
+      let supFields = null;
+      if (supRef && supDoc.exists) {
+        supFields = { totalPayable: round2((supDoc.data().totalPayable || 0) + entry.amount) };
+      }
+
+      // ✅ সব write পরে
+      tx.set(entryRef, entry);
+      if (invRef && invFields) { if (invExists) tx.update(invRef, invFields); else tx.set(invRef, invFields); }
+      if (custRef && custFields) tx.update(custRef, custFields);
+      if (supRef && supFields) tx.update(supRef, supFields);
+    });
+
     return { success: true };
   } catch (err) { return { success: false, message: err.message }; }
 }
@@ -788,26 +816,47 @@ async function apiSubmitOpeningEntry(entry) {
 async function apiDeleteOpeningEntry(entry) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
-    const batch = fbDb.batch();
-    batch.delete(userCol('openingEntries').doc(entry.entryId));
-    if (entry.category === 'স্টক' && entry.batchId) {
-      const invRef = userCol('inventory').doc(entry.medicineId);
-      const invDoc = await cget(invRef);
-      if (invDoc.exists) {
+    const entryRef = userCol('openingEntries').doc(entry.entryId);
+    const invRef = (entry.category === 'স্টক' && entry.batchId) ? userCol('inventory').doc(entry.medicineId) : null;
+    const custRef = (entry.category === 'গ্রাহক বাকি' && entry.clientId) ? userCol('customers').doc(entry.clientId) : null;
+    const supRef = (entry.category === 'সরবরাহকারী বাকি' && entry.supplierId) ? userCol('suppliers').doc(entry.supplierId) : null;
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDoc = invRef ? await tx.get(invRef) : null;
+      const custDoc = custRef ? await tx.get(custRef) : null;
+      const supDoc = supRef ? await tx.get(supRef) : null;
+
+      // ✅ কম্পিউট
+      let invFields = null;
+      if (invRef && invDoc.exists) {
         const inv = invDoc.data();
         const batches = (inv.batches || []).filter(b => b.batchId !== entry.batchId);
-        batch.update(invRef, { batches, totalStock: batches.reduce((a, b) => a + b.stock, 0), costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)) });
+        invFields = {
+          batches,
+          totalStock: batches.reduce((a, b) => a + b.stock, 0),
+          costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)),
+          mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)),
+        };
       }
-    } else if (entry.category === 'গ্রাহক বাকি' && entry.clientId) {
-      const custRef = userCol('customers').doc(entry.clientId);
-      const custDoc = await cget(custRef);
-      if (custDoc.exists) batch.update(custRef, { due: Math.max(0, round2((custDoc.data().due || 0) - entry.amount)) });
-    } else if (entry.category === 'সরবরাহকারী বাকি' && entry.supplierId) {
-      const supRef = userCol('suppliers').doc(entry.supplierId);
-      const supDoc = await cget(supRef);
-      if (supDoc.exists) batch.update(supRef, { totalPayable: Math.max(0, round2((supDoc.data().totalPayable || 0) - entry.amount)) });
-    }
-    await batch.commit();
+
+      let custFields = null;
+      if (custRef && custDoc.exists) {
+        custFields = { due: Math.max(0, round2((custDoc.data().due || 0) - entry.amount)) };
+      }
+
+      let supFields = null;
+      if (supRef && supDoc.exists) {
+        supFields = { totalPayable: Math.max(0, round2((supDoc.data().totalPayable || 0) - entry.amount)) };
+      }
+
+      // ✅ সব write পরে
+      tx.delete(entryRef);
+      if (invRef && invFields) tx.update(invRef, invFields);
+      if (custRef && custFields) tx.update(custRef, custFields);
+      if (supRef && supFields) tx.update(supRef, supFields);
+    });
+
     return { success: true };
   } catch (err) { return { success: false, message: err.message }; }
 }
