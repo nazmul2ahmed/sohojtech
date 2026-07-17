@@ -467,7 +467,8 @@ async function deleteSaleConfirm(invoiceNo) {
   try {
     const res = await apiDeleteSale(sale);
     if (!res.success) return toast(res.message, 'w');
-    sale.items.forEach(item => restockItem(item.medId, item.qty, item.costPrice));
+    // ✅ ফিক্স: item.consumedBatches পাস করা হচ্ছে — সঠিক ব্যাচে স্টক ফেরত
+    sale.items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
     if (sale.customerId !== 'WALK_IN') {
       applyCustomerDueChange(sale.customerId, -sale.due, -sale.cashPaid);
     }
