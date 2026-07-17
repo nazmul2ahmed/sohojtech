@@ -159,6 +159,7 @@ function closeSupplierForm() {
 }
 
 async function saveSupplier(supId) {
+  if (guardReadOnly()) return;
   const isEdit = !!supId;
   const errEl = document.getElementById('sup-form-error');
   const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('hidden'); };
@@ -204,6 +205,7 @@ async function saveSupplier(supId) {
 // DELETE
 // ────────────────────────────────────────────────────────────
 async function deleteSupplierConfirm(supId) {
+  if (guardReadOnly()) return;
   const sup = APP_STATE.suppliers.find(s => s.id === supId);
   if (!sup) return;
   if (sup.totalPayable > 0) {
@@ -262,6 +264,7 @@ function closePayPayable() {
 }
 
 async function savePayPayable(supId) {
+  if (guardReadOnly()) return;
   const sup = APP_STATE.suppliers.find(s => s.id === supId);
   if (!sup) return;
   const errEl = document.getElementById('pp-form-error');
