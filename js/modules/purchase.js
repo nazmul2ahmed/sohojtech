@@ -318,6 +318,7 @@ function calcPurTotal() {
 // ✅ SUBMIT — এখন async, apiSubmitPurchase() সফল হলেই APP_STATE আপডেট হয়
 // ────────────────────────────────────────────────────────────
 async function submitPurchase() {
+  if (guardReadOnly()) return;
   hideEl('pur-error');
   const supId = sdGetValue('sd-pur-supplier');
   const date = document.getElementById('pur-date').value || todayStr();
@@ -457,6 +458,7 @@ function renderTodayPurchases() {
 // DELETE PURCHASE
 // ────────────────────────────────────────────────────────────
 async function deletePurchaseConfirm(purchaseId) {
+  if (guardReadOnly()) return;
   const pur = APP_STATE.purchases.find(p => p.purchaseId === purchaseId);
   if (!pur || !confirm(`"${purchaseId}" মুছবেন? স্টক/পাওনা ফেরত হবে।`)) return;
   try {
