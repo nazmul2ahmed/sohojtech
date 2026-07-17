@@ -219,6 +219,7 @@ function closeBatchEdit() {
 }
 
 async function saveBatchEdit(medId, batchId) {
+  if (guardReadOnly()) return;
   const inv = APP_STATE.inventory.find(m => m.medId === medId);
   const batch = inv?.batches.find(b => b.batchId === batchId);
   if (!batch) return;
