@@ -202,6 +202,7 @@ function closeMedicineForm() {
 
 // ✅ async — Firestore কল শেষ না হওয়া পর্যন্ত বাটন disabled থাকবে (ডাবল-সাবমিট রোধ)
 async function saveMedicine(medId) {
+  if (guardReadOnly()) return;
   const isEdit = !!medId;
   const errEl = document.getElementById('med-form-error');
   const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('hidden'); };
@@ -264,6 +265,7 @@ async function saveMedicine(medId) {
 // DELETE
 // ────────────────────────────────────────────────────────────
 async function deleteMedicineConfirm(medId) {
+  if (guardReadOnly()) return;
   const med = APP_STATE.medicines.find(m => m.id === medId);
   if (!med) return;
   const inv = APP_STATE.inventory.find(i => i.medId === medId);
