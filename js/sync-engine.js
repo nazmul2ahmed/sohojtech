@@ -9,18 +9,33 @@
 
 let _syncInProgress = false;
 
+// ✅ ধাপ ২০: ব্যর্থ এন্ট্রির অসীম অটো-রিট্রাই ঠেকাতে
+const MAX_AUTO_RETRY_ATTEMPTS = 5;
+const BACKOFF_BASE_MS = 30000;        // প্রথম রিট্রাই বিরতি: ৩০ সেকেন্ড
+const BACKOFF_MAX_MS = 30 * 60000;    // সর্বোচ্চ বিরতি: ৩০ মিনিট
+
 function initSyncEngine() {
+  // ✅ ফিক্স: গত সেশনে (ট্যাব ক্র্যাশ/বন্ধ) যদি কোনো এন্ট্রি 'syncing'
+  // অবস্থায় আটকে থেকে যায়, সেটা এখন কেউ প্রসেস করছে না — তাই বুটেই
+  // সেগুলোকে 'queued'-এ ফিরিয়ে দেওয়া হচ্ছে, নাহলে চিরতরে আটকে থাকবে।
   resetStuckSyncingEntries().finally(() => {
     refreshSyncBadge(); // ✅ ধাপ ১৮: বুট-টাইমে সঠিক (uid-ফিল্টারড) pending count সাথে সাথে দেখানো
     if (navigator.onLine) triggerSync();
   });
 
+  // ✅ ফিক্স: শুধু 'online' ইভেন্টের উপর নির্ভর করা যথেষ্ট নয় — এটা মোবাইল
+  // ব্রাউজারে/DevTools সিমুলেশনে মাঝেমধ্যে fire হয় না। তাই একাধিক
+  // নিরাপত্তা-স্তর:
   window.addEventListener('online', () => triggerSync());
 
+  // ট্যাব আবার visible হলে (phone unlock, app switch থেকে ফিরে আসা)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && navigator.onLine) triggerSync();
   });
 
+  // চূড়ান্ত নিরাপত্তা-নেট — প্রতি ২০ সেকেন্ডে হালকা চেক (শুধু pending
+  // থাকলে triggerSync() ভেতরে কিছু করে, নাহলে সাথে সাথে রিটার্ন করে —
+  // তাই এটা ব্যাটারি/ডেটা খরচ করে না)
   setInterval(() => { if (navigator.onLine) triggerSync(); }, 20000);
 }
 
@@ -36,13 +51,34 @@ async function triggerSync() {
   }
 }
 
+// ✅ ধাপ ২০: এই ব্যর্থ এন্ট্রিটা এখনই অটো-রিট্রাই করা উচিত কিনা —
+// attempt-cap ও exponential backoff দুটোই বিবেচনা করে
+function shouldAutoRetryFailed(entry) {
+  if ((entry.attempts || 0) >= MAX_AUTO_RETRY_ATTEMPTS) return false;
+  if (!entry.lastAttemptAt) return true;
+  const backoffMs = Math.min(BACKOFF_BASE_MS * Math.pow(2, (entry.attempts || 1) - 1), BACKOFF_MAX_MS);
+  return (Date.now() - entry.lastAttemptAt) >= backoffMs;
+}
+
+function isPermanentlyFailed(entry) {
+  return entry.status === 'failed' && (entry.attempts || 0) >= MAX_AUTO_RETRY_ATTEMPTS;
+}
+
 function getSyncTypeApiMap() {
   return { sale: apiSubmitSale, purchase: apiSubmitPurchase };
 }
 
 async function processPendingQueue() {
   if (!navigator.onLine) return;
-  const entries = (await getPendingWrites()).filter(e => e.status !== 'syncing');
+  const all = await getPendingWrites();
+  // ✅ ধাপ ২০: 'queued' সবসময় প্রসেস হবে (নতুন বা ম্যানুয়াল রিট্রাই থেকে আসা)।
+  // 'failed' শুধু backoff-window পার হলে এবং attempt-cap-এর নিচে থাকলেই
+  // অটো-প্রসেস হবে — নাহলে ম্যানুয়াল হস্তক্ষেপের অপেক্ষায় থাকবে।
+  const entries = all.filter(e => {
+    if (e.status === 'syncing') return false;
+    if (e.status === 'failed') return shouldAutoRetryFailed(e);
+    return true;
+  });
 
   for (const entry of entries) {
     if (!navigator.onLine) break; // মাঝপথে নেট চলে গেলে থেমে যাও, বাকিটা পরে
@@ -159,7 +195,10 @@ function renderSyncPanelList(entries) {
   box.innerHTML = entries.map(e => {
     const label = e.type === 'sale' ? `বিক্রয় ${esc(e.payload.invoiceNo)} — ৳${fmt(e.payload.totalBill)}`
       : `ক্রয় ${esc(e.payload.purchaseId)} — ৳${fmt(e.payload.totalCost)}`;
-    const statusBadge = e.status === 'failed' ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">ব্যর্থ</span>`
+    const permanentlyFailed = isPermanentlyFailed(e);
+    const statusBadge = permanentlyFailed
+      ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">স্থায়ী ব্যর্থ — ম্যানুয়াল প্রয়োজন</span>`
+      : e.status === 'failed' ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">ব্যর্থ — পরে আবার চেষ্টা হবে</span>`
       : e.status === 'syncing' ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">সিঙ্ক হচ্ছে...</span>`
       : `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">অপেক্ষমাণ</span>`;
     return `
@@ -167,7 +206,7 @@ function renderSyncPanelList(entries) {
         <div class="flex justify-between items-center mb-1">
           <span class="text-sm font-semibold">${label}</span>${statusBadge}
         </div>
-        ${e.status === 'failed' ? `<div class="text-xs text-red-500 mb-2">${esc(e.lastError || '')}</div>
+        ${e.status === 'failed' ? `<div class="text-xs text-red-500 mb-2">${esc(e.lastError || '')}${permanentlyFailed ? ` (${e.attempts || 0}টা চেষ্টা ব্যর্থ)` : ''}</div>
         <div class="flex gap-2">
           <button data-tempid="${e.tempId}" class="sync-retry-btn text-xs text-brand hover:underline"><i class="fa-solid fa-rotate-right mr-1"></i>আবার চেষ্টা করুন</button>
           <button data-tempid="${e.tempId}" class="sync-discard-btn text-xs text-red-500 hover:underline"><i class="fa-solid fa-trash mr-1"></i>বাতিল করুন</button>
