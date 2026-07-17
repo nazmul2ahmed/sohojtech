@@ -210,6 +210,7 @@ function toggleExpenseForm() {
 }
 
 async function submitExpenseEntry() {
+  if (guardReadOnly()) return;
   const errEl = document.getElementById('exp-form-error');
   const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('hidden'); };
   errEl.classList.add('hidden');
@@ -231,6 +232,7 @@ async function submitExpenseEntry() {
 }
 
 async function deleteExpenseEntry(expId) {
+  if (guardReadOnly()) return;
   if (!confirm('এই খরচ এন্ট্রি মুছবেন?')) return;
   try {
     const res = await apiDeleteExpense(expId);
