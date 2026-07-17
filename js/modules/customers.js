@@ -266,6 +266,7 @@ function closeCollectDue() {
 }
 
 async function saveCollectDue(custId) {
+  if (guardReadOnly()) return;
   const cust = APP_STATE.customers.find(c => c.id === custId);
   if (!cust) return;
   const errEl = document.getElementById('cd-form-error');
