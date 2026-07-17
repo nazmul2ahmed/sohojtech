@@ -12,13 +12,46 @@ let invSearchDebounce = null;
 // এই তিনটা ফাংশন pos.js, purchase.js, returns.js, opening.js, settings.js
 // থেকে global scope-এ কল হয়।
 // ════════════════════════════════════════════════════════════
-function restockItem(medId, qty, cost) {
+
+function restockItem(medId, qty, cost, consumedBatches) {
   const inv = APP_STATE.inventory.find(m => m.medId === medId);
   if (!inv) return;
-  if (inv.batches.length) { inv.batches[0].stock += qty; }
-  else { inv.batches.push({ batchId: 'BAT-RET-' + Date.now(), expiry: '', stock: qty, cost: cost || 0, mrp: 0, sell: inv.sellPrice }); }
+  if (consumedBatches && consumedBatches.length) {
+    // ✅ ফিক্স: consumedBatches দেওয়া থাকলে (sale/return delete থেকে আসা) ঠিক
+    // সেই ব্যাচেই স্টক ফেরত — batches[0]-এ ঢালার বদলে, batch-level cost/expiry অক্ষুণ্ণ থাকে
+    consumedBatches.forEach(cb => {
+      const target = inv.batches.find(b => b.batchId === cb.batchId);
+      if (target) target.stock += cb.qty;
+      else inv.batches.push({ batchId: cb.batchId, expiry: '', stock: cb.qty, cost: cb.cost || 0, mrp: 0, sell: inv.sellPrice });
+    });
+  } else if (inv.batches.length) {
+    // ফলব্যাক: পুরনো (ফিক্সের আগের) রেকর্ড — আগের আচরণ অপরিবর্তিত
+    inv.batches[0].stock += qty;
+  } else {
+    inv.batches.push({ batchId: 'BAT-RET-' + Date.now(), expiry: '', stock: qty, cost: cost || 0, mrp: 0, sell: inv.sellPrice });
+  }
   recalcInventoryRow(inv);
 }
+
+// ✅ নতুন: consumedBatches-ভিত্তিক precise destock — কাস্টমার-রিটার্ন এন্ট্রি
+// মুছে ফেলার সময় ঠিক যে ব্যাচে return-এর সময় স্টক ফেরত দেওয়া হয়েছিল, সেখান
+// থেকেই নির্ভুলভাবে বাদ দেওয়ার জন্য। consumedBatches না থাকলে (পুরনো রেকর্ড)
+// সাধারণ FEFO destockItem()-এ ফলব্যাক করে।
+function destockFromConsumed(medId, qty, consumedBatches) {
+  const inv = APP_STATE.inventory.find(m => m.medId === medId);
+  if (!inv) return;
+  if (consumedBatches && consumedBatches.length) {
+    consumedBatches.forEach(cb => {
+      const target = inv.batches.find(b => b.batchId === cb.batchId);
+      if (target) target.stock = Math.max(0, target.stock - cb.qty);
+    });
+    inv.batches = inv.batches.filter(b => b.stock > 0);
+    recalcInventoryRow(inv);
+  } else {
+    destockItem(medId, qty);
+  }
+}
+
 function destockItem(medId, qty) {
   const inv = APP_STATE.inventory.find(m => m.medId === medId);
   if (!inv) return;
