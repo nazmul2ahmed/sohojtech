@@ -7,7 +7,7 @@
 // ════════════════════════════════════════════════════════════
 
 const SYNC_DB_NAME = 'sohojtech-sync-db';
-const SYNC_DB_VERSION = 1;
+const SYNC_DB_VERSION = 2;
 const PENDING_STORE = 'pendingWrites';
 
 let _syncDbInstance = null;
@@ -24,18 +24,24 @@ function initSyncDB() {
 
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
+      let store;
       if (!db.objectStoreNames.contains(PENDING_STORE)) {
-        const store = db.createObjectStore(PENDING_STORE, { keyPath: 'tempId' });
+        store = db.createObjectStore(PENDING_STORE, { keyPath: 'tempId' });
         store.createIndex('status', 'status', { unique: false });
         store.createIndex('queuedAt', 'queuedAt', { unique: false });
         store.createIndex('type', 'type', { unique: false });
+      } else {
+        // ✅ ধাপ ১৮: বিদ্যমান স্টোর (v1 থেকে upgrade) — শুধু নতুন ইনডেক্স যোগ
+        store = e.target.transaction.objectStore(PENDING_STORE);
+      }
+      if (!store.indexNames.contains('uid')) {
+        // ✅ ধাপ ১৮: cross-tenant leak ঠেকাতে — কোন এন্ট্রি কার, তা দিয়ে ফিল্টার করার জন্য
+        store.createIndex('uid', 'uid', { unique: false });
       }
     };
 
     req.onsuccess = (e) => {
       _syncDbInstance = e.target.result;
-      // ✅ ব্রাউজারকে অনুরোধ — এই সাইটের ডেটা যেন সহজে ইভিক্ট না করে
-      // (storage-pressure হলেও pendingWrites যেন টিকে থাকে)
       if (navigator.storage && navigator.storage.persist) {
         navigator.storage.persist().catch(() => {});
       }
@@ -64,8 +70,17 @@ function _genTempId() {
 // ────────────────────────────────────────────────────────────
 async function queueWrite({ type, payload }) {
   const db = await initSyncDB();
+
+  // ✅ ধাপ ১৮: uid ছাড়া queue করা মানে ভবিষ্যতে ভুল অ্যাকাউন্টে sync হওয়ার
+  // ঝুঁকি — তাই uid না থাকলে queue করাই হবে না, বরং স্পষ্ট এরর দেবে।
+  const uid = APP_STATE.currentUser?.uid;
+  if (!uid) {
+    throw new Error('ইউজার সনাক্ত করা যায়নি — অফলাইন এন্ট্রি নিরাপদে সংরক্ষণ করা সম্ভব হয়নি। পেজ রিফ্রেশ করে আবার চেষ্টা করুন।');
+  }
+
   const entry = {
     tempId: _genTempId(),
+    uid, // ✅ ধাপ ১৮: এই queue-এন্ট্রি কোন Firestore অ্যাকাউন্টের, তা স্থায়ীভাবে বেঁধে রাখা হলো
     type,
     payload,
     status: 'queued',       // queued | syncing | failed
@@ -90,16 +105,31 @@ async function queueWrite({ type, payload }) {
 // ────────────────────────────────────────────────────────────
 async function getPendingWrites() {
   const db = await initSyncDB();
-  return new Promise((resolve, reject) => {
+  const uid = APP_STATE.currentUser?.uid;
+
+  const all = await new Promise((resolve, reject) => {
     const tx = db.transaction(PENDING_STORE, 'readonly');
     const req = tx.objectStore(PENDING_STORE).getAll();
-    req.onsuccess = () => {
-      const list = req.result || [];
-      list.sort((a, b) => a.queuedAt - b.queuedAt);
-      resolve(list);
-    };
+    req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
   });
+
+  if (!uid) return []; // লগইন-পূর্ব অবস্থায় কোনো এন্ট্রি দেখানো নিরাপদ না
+
+  // ✅ ধাপ ১৮ — মাইগ্রেশন: এই ফিক্সের আগে queue হওয়া পুরনো এন্ট্রিতে uid ফিল্ড
+  // নেই। সেগুলোকে বর্তমানে লগইন করা ইউজারের বলে ধরে নিয়ে (best-effort,
+  // একবারই) uid বসিয়ে persist করা হচ্ছে — যাতে এখন থেকে সঠিকভাবে ফিল্টার হয়।
+  // এটা আগের অনির্ধারিত অবস্থার চেয়ে খারাপ কিছু করছে না, শুধু ভবিষ্যতের
+  // জন্য ট্র্যাকিং নিশ্চিত করছে।
+  const legacy = all.filter(e => !e.uid);
+  if (legacy.length) {
+    await Promise.all(legacy.map(e => _updateEntry(e.tempId, (entry) => { entry.uid = uid; })));
+    legacy.forEach(e => { e.uid = uid; });
+  }
+
+  const list = all.filter(e => e.uid === uid);
+  list.sort((a, b) => a.queuedAt - b.queuedAt);
+  return list;
 }
 
 // ────────────────────────────────────────────────────────────
