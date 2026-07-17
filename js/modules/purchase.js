@@ -1,5 +1,9 @@
 'use strict';
 
+// ✅ ফিক্স: pos.js-এর genInvoiceNo()-এর মতো একই কারণে — কলিশন-প্রতিরোধী
+function genPurchaseId() {
+  return 'PUR-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+}
 // ════════════════════════════════════════════════════════════
 // PURCHASE MODULE
 // ════════════════════════════════════════════════════════════
@@ -330,7 +334,7 @@ async function submitPurchase() {
 
   const supplier = APP_STATE.suppliers.find(s => s.id === supId);
   const totalCost = round2(validItems.reduce((a, i) => a + i.qty * i.purchasePrice, 0));
-  const purchaseId = 'PUR-' + Date.now();
+  const purchaseId = genPurchaseId(); // ✅ ফিক্স: কলিশন-প্রতিরোধী ID
 
   const itemsWithReorder = validItems.map(i => {
     const med = APP_STATE.medicines.find(m => m.id === i.medId);
