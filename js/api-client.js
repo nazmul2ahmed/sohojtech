@@ -390,7 +390,6 @@ async function apiDeleteSale(sale) {
     const custRef = hasCustomer ? userCol('customers').doc(sale.customerId) : null;
 
     await fbDb.runTransaction(async (tx) => {
-      // ✅ সব read আগে
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const custDoc = custRef ? await tx.get(custRef) : null;
 
@@ -399,10 +398,9 @@ async function apiDeleteSale(sale) {
 
       sale.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
-        const batches = [...(e.data.batches || [])];
-        if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
-        else batches.push({ batchId: 'BAT-VOID-' + Date.now(), expiry: '', stock: item.qty, cost: item.costPrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
-        e.data.batches = batches;
+        // ✅ ফিক্স: batches[0]-এ ঢালার বদলে item.consumedBatches অনুযায়ী
+        // ঠিক সেই ব্যাচেই স্টক ফেরত — batch-wise expiry/cost integrity বজায় থাকে
+        e.data.batches = restockBatchesFromConsumed([...(e.data.batches || [])], item, 'BAT-VOID', e.data.sellPrice);
       });
 
       let custFields = null;
@@ -410,7 +408,6 @@ async function apiDeleteSale(sale) {
         custFields = { due: Math.max(0, round2((custDoc.data().due || 0) - (sale.due || 0))), totalPaid: Math.max(0, round2((custDoc.data().totalPaid || 0) - (sale.cashPaid || 0))) };
       }
 
-      // ✅ সব write পরে
       tx.delete(userCol('sales').doc(sale.invoiceNo));
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
@@ -423,6 +420,7 @@ async function apiDeleteSale(sale) {
     return { success: true, message: 'বিক্রয় মুছে ফেলা হয়েছে, স্টক/বাকি ফেরত হয়েছে।' };
   } catch (err) { return { success: false, message: err.message }; }
 }
+
 // ────────────────────────────────────────────────────────────
 // PURCHASE
 // ────────────────────────────────────────────────────────────
@@ -534,7 +532,6 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
     const custRef = custDueReduction > 0 ? userCol('customers').doc(custId) : null;
 
     await fbDb.runTransaction(async (tx) => {
-      // ✅ সব read আগে
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const custDoc = custRef ? await tx.get(custRef) : null;
 
@@ -543,10 +540,8 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
 
       returnDoc.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
-        const batches = [...(e.data.batches || [])];
-        if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
-        else batches.push({ batchId: 'BAT-RET-' + Date.now(), expiry: '', stock: item.qty, cost: item.costPrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
-        e.data.batches = batches;
+        // ✅ ফিক্স: consumedBatches অনুযায়ী সঠিক ব্যাচে ফেরত
+        e.data.batches = restockBatchesFromConsumed([...(e.data.batches || [])], item, 'BAT-RET', e.data.sellPrice);
       });
 
       let custFields = null;
@@ -554,7 +549,6 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
         custFields = { due: round2((custDoc.data().due || 0) - custDueReduction) };
       }
 
-      // ✅ সব write পরে
       tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
@@ -618,7 +612,6 @@ async function apiDeleteReturn(ret) {
     const uniqueMedIds = [...new Set(ret.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
 
-    // ✅ partyRef কোন কালেকশন থেকে আসবে তা আগেই নির্ধারণ (read এখনো হয়নি)
     let partyRef = null;
     if (ret.returnType === 'customer' && ret.refundMethod === 'বাকি সমন্বয়') {
       partyRef = userCol('customers').doc(ret.partyId);
@@ -627,7 +620,6 @@ async function apiDeleteReturn(ret) {
     }
 
     await fbDb.runTransaction(async (tx) => {
-      // ✅ সব read আগে
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const partyDoc = partyRef ? await tx.get(partyRef) : null;
 
@@ -638,8 +630,18 @@ async function apiDeleteReturn(ret) {
         ret.items.forEach(item => {
           const e = invMap[item.medId]; if (!e.data) return;
           let batches = [...(e.data.batches || [])];
-          let remaining = item.qty;
-          batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; }).filter(b => b.stock > 0);
+          if (item.consumedBatches && item.consumedBatches.length) {
+            // ✅ ফিক্স: precise undo — ঠিক যে ব্যাচে return-এর সময় স্টক যোগ হয়েছিল, সেখান থেকেই বাদ
+            item.consumedBatches.forEach(cb => {
+              const target = batches.find(b => b.batchId === cb.batchId);
+              if (target) target.stock = Math.max(0, target.stock - cb.qty);
+            });
+            batches = batches.filter(b => b.stock > 0);
+          } else {
+            // ফলব্যাক: পুরনো রেকর্ড — generic FEFO destock
+            let remaining = item.qty;
+            batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; }).filter(b => b.stock > 0);
+          }
           e.data.batches = batches;
         });
       } else {
@@ -661,7 +663,6 @@ async function apiDeleteReturn(ret) {
         }
       }
 
-      // ✅ সব write পরে
       tx.delete(userCol('returns').doc(ret.returnId));
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
