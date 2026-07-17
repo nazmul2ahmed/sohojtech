@@ -161,6 +161,7 @@ function closeCustomerForm() {
 }
 
 async function saveCustomer(custId) {
+  if (guardReadOnly()) return;
   const isEdit = !!custId;
   const errEl = document.getElementById('cust-form-error');
   const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('hidden'); };
@@ -206,6 +207,7 @@ async function saveCustomer(custId) {
 // DELETE
 // ────────────────────────────────────────────────────────────
 async function deleteCustomerConfirm(custId) {
+  if (guardReadOnly()) return;
   const cust = APP_STATE.customers.find(c => c.id === custId);
   if (!cust) return;
   if (cust.due > 0) {
