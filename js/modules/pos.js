@@ -319,6 +319,7 @@ function onPOSCashChange() {
 // ✅ SUBMIT — এখন async, apiSubmitSale() সফল হলেই APP_STATE আপডেট হয়
 // ────────────────────────────────────────────────────────────
 async function submitPOSSale() {
+  if (guardReadOnly()) return;
   hideEl('pos-error');
   const custId = sdGetValue('sd-pos-customer');
   const validItems = APP_STATE.posItems.filter(i => i.medId && i.qty > 0);
@@ -384,7 +385,6 @@ async function submitPOSSale() {
     btn.innerHTML = idleHTML;
   }
 }
-
 function showPOSError(msg) {
   const el = document.getElementById('pos-error');
   el.textContent = msg;
@@ -461,6 +461,7 @@ function renderTodayPOSSales() {
 function hideEl(id) { document.getElementById(id)?.classList.add('hidden'); }
 
 async function deleteSaleConfirm(invoiceNo) {
+  if (guardReadOnly()) return;
   const sale = APP_STATE.sales.find(s => s.invoiceNo === invoiceNo);
   if (!sale || !confirm(`"${invoiceNo}" মুছবেন? স্টক ও বাকি ফেরত হবে।`)) return;
   try {
