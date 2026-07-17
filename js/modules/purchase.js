@@ -334,7 +334,7 @@ async function submitPurchase() {
 
   const supplier = APP_STATE.suppliers.find(s => s.id === supId);
   const totalCost = round2(validItems.reduce((a, i) => a + i.qty * i.purchasePrice, 0));
-  const purchaseId = genPurchaseId(); // ✅ ফিক্স: কলিশন-প্রতিরোধী ID
+  const purchaseId = genPurchaseId(); // ✅ সংশোধন: কলিশন-প্রতিরোধী ID (আগের বার্তায় ভুলে বাদ পড়েছিল)
 
   const itemsWithReorder = validItems.map(i => {
     const med = APP_STATE.medicines.find(m => m.id === i.medId);
