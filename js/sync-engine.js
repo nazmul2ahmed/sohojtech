@@ -10,26 +10,17 @@
 let _syncInProgress = false;
 
 function initSyncEngine() {
-  // ✅ ফিক্স: গত সেশনে (ট্যাব ক্র্যাশ/বন্ধ) যদি কোনো এন্ট্রি 'syncing'
-  // অবস্থায় আটকে থেকে যায়, সেটা এখন কেউ প্রসেস করছে না — তাই বুটেই
-  // সেগুলোকে 'queued'-এ ফিরিয়ে দেওয়া হচ্ছে, নাহলে চিরতরে আটকে থাকবে।
   resetStuckSyncingEntries().finally(() => {
+    refreshSyncBadge(); // ✅ ধাপ ১৮: বুট-টাইমে সঠিক (uid-ফিল্টারড) pending count সাথে সাথে দেখানো
     if (navigator.onLine) triggerSync();
   });
 
-  // ✅ ফিক্স: শুধু 'online' ইভেন্টের উপর নির্ভর করা যথেষ্ট নয় — এটা মোবাইল
-  // ব্রাউজারে/DevTools সিমুলেশনে মাঝেমধ্যে fire হয় না। তাই একাধিক
-  // নিরাপত্তা-স্তর:
   window.addEventListener('online', () => triggerSync());
 
-  // ট্যাব আবার visible হলে (phone unlock, app switch থেকে ফিরে আসা)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && navigator.onLine) triggerSync();
   });
 
-  // চূড়ান্ত নিরাপত্তা-নেট — প্রতি ২০ সেকেন্ডে হালকা চেক (শুধু pending
-  // থাকলে triggerSync() ভেতরে কিছু করে, নাহলে সাথে সাথে রিটার্ন করে —
-  // তাই এটা ব্যাটারি/ডেটা খরচ করে না)
   setInterval(() => { if (navigator.onLine) triggerSync(); }, 20000);
 }
 
