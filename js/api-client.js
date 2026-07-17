@@ -263,10 +263,48 @@ function computeFEFODeduction(invData, qty) {
   const batches = (invData.batches || []).map(b => ({ ...b }));
   batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
   let remaining = qty;
-  for (const b of batches) { if (remaining <= 0) break; const take = Math.min(b.stock, remaining); b.stock -= take; remaining -= take; }
+  let totalCost = 0;
+  const consumed = []; // ✅ কোন batchId থেকে কত ইউনিট + কী cost-এ কাটা হলো — restock/return-এর জন্য দরকার
+
+  for (const b of batches) {
+    if (remaining <= 0) break;
+    const take = Math.min(b.stock, remaining);
+    if (take > 0) {
+      totalCost += take * (b.cost || 0);
+      consumed.push({ batchId: b.batchId, qty: take, cost: b.cost || 0 });
+      b.stock -= take;
+      remaining -= take;
+    }
+  }
   if (remaining > 0) return null;
+
   const rb = batches.filter(b => b.stock > 0);
-  return { batches: rb, totalStock: rb.reduce((a, b) => a + b.stock, 0), costValue: round2(rb.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(rb.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: rb[0]?.expiry || '' };
+  return {
+    batches: rb,
+    totalStock: rb.reduce((a, b) => a + b.stock, 0),
+    costValue: round2(rb.reduce((a, b) => a + b.cost * b.stock, 0)),
+    mrpValue: round2(rb.reduce((a, b) => a + b.mrp * b.stock, 0)),
+    nearestExpiry: rb[0]?.expiry || '',
+    weightedCost: round2(totalCost / qty), // ✅ একাধিক ব্যাচ থেকে কাটলে সঠিক গড় COGS
+    consumedBatches: consumed,             // ✅ পরে ফেরত/রিটার্নে সঠিক ব্যাচে বসাতে
+  };
+}
+
+// ✅ কমন হেল্পার: sale/return item-এর consumedBatches অনুযায়ী ঠিক সেই ব্যাচেই স্টক
+// ফেরত দেয় যেখান থেকে আসলে কাটা হয়েছিল। consumedBatches না থাকলে (ফিক্সের আগের
+// পুরনো রেকর্ড) fallback হিসেবে batches[0]-এ ঢালে — আগের আচরণের সাথে সামঞ্জস্যপূর্ণ।
+function restockBatchesFromConsumed(batches, item, fallbackBatchIdPrefix, sellFallback) {
+  if (item.consumedBatches && item.consumedBatches.length) {
+    item.consumedBatches.forEach(cb => {
+      const target = batches.find(b => b.batchId === cb.batchId);
+      if (target) target.stock += cb.qty;
+      else batches.push({ batchId: cb.batchId, expiry: '', stock: cb.qty, cost: cb.cost, mrp: 0, sell: sellFallback || 0 });
+    });
+  } else {
+    if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
+    else batches.push({ batchId: fallbackBatchIdPrefix + '-' + Date.now(), expiry: '', stock: item.qty, cost: item.costPrice || 0, mrp: 0, sell: sellFallback || 0 });
+  }
+  return batches;
 }
 
 async function apiSubmitSale(sale, opts = {}) {
@@ -284,11 +322,6 @@ async function apiSubmitSale(sale, opts = {}) {
     const saleRef = userCol('sales').doc(sale.invoiceNo);
 
     await withTimeout(fbDb.runTransaction(async (tx) => {
-      // ✅ transaction-এর সব read আগে (Firestore-এর নিয়ম)
-      // ✅ ফিক্স: saleRef-ও এখানে read হচ্ছে — এই invoiceNo আগেই কোনো
-      // পূর্ববর্তী (client-timeout-এ "ব্যর্থ" ধরে নেওয়া কিন্তু আসলে সার্ভারে
-      // পরে সফল হওয়া) চেষ্টায় commit হয়ে গিয়ে থাকলে, দ্বিতীয়বার স্টক/বাকি
-      // ডিডাকশন এড়াতে এই চেক আবশ্যক।
       const existingSaleDoc = await tx.get(saleRef);
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const custDoc = custRef ? await tx.get(custRef) : null;
@@ -304,7 +337,22 @@ async function apiSubmitSale(sale, opts = {}) {
         if (!invDoc.exists) throw new Error(`"${item.name}" ইনভেন্টরিতে পাওয়া যায়নি।`);
         const result = computeFEFODeduction(invDoc.data(), item.qty);
         if (!result) throw new Error(`"${item.name}" স্টক অপর্যাপ্ত।`);
-        invUpdates.push({ ref: invRefs[i], fields: result });
+
+        // ✅ ফিক্স: প্রথম-ব্যাচের cost না — একাধিক ব্যাচ থেকে কাটা হলে সঠিক
+        // weighted-average COGS এখন sale.items-এ বসানো হচ্ছে, commit হওয়ার আগেই।
+        item.costPrice = result.weightedCost;
+        item.consumedBatches = result.consumedBatches;
+
+        invUpdates.push({
+          ref: invRefs[i],
+          fields: {
+            batches: result.batches,
+            totalStock: result.totalStock,
+            costValue: result.costValue,
+            mrpValue: result.mrpValue,
+            nearestExpiry: result.nearestExpiry,
+          },
+        });
       }
 
       let custUpdate = null;
@@ -316,7 +364,6 @@ async function apiSubmitSale(sale, opts = {}) {
         };
       }
 
-      // ✅ সব write এখন — read-এর পরে
       tx.set(saleRef, sale);
       invUpdates.forEach(u => tx.update(u.ref, u.fields));
       if (custRef && custUpdate) tx.update(custRef, custUpdate);
@@ -326,14 +373,8 @@ async function apiSubmitSale(sale, opts = {}) {
   } catch (err) {
     if (isConnectivityError(err)) {
       if (isRetry) {
-        // sync-queue থেকে retry — এখানে আবার queue করলে duplicate entry
-        // তৈরি হবে। 'failed' মার্ক হয়ে থাকুক, পরের auto-retry সাইকেলে
-        // আবার চেষ্টা হবে (processPendingQueue failed-ও রিট্রাই করে)।
         return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
       }
-      // ✅ মূল ফিক্স: navigator.onLine সত্য বলছে, কিন্তু আসল লেনদেন
-      // ব্যর্থ/টাইমআউট হয়েছে (fake-online) — এন্ট্রি হারানোর বদলে এখন
-      // অফলাইন queue-তে নিরাপদে সংরক্ষণ করা হচ্ছে।
       return await queueSaleOffline(sale);
     }
     return { success: false, message: err.message };
