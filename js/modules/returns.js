@@ -156,7 +156,7 @@ async function submitCustomerReturn(invoiceNo) {
     items.push({
       medId: item.medId, name: item.name, qty, price: item.price,
       discountPct: item.discountPct, costPrice: item.costPrice,
-      // ✅ ফিক্স: already-returned অফসেট বাদ দিয়ে সঠিক consumedBatches অংশ
+      // ✅ সংশোধন: already-returned অফসেট বাদ দিয়ে সঠিক consumedBatches অংশ (আগের বার্তায় ভুলে বাদ পড়েছিল)
       consumedBatches: extractConsumedBatchPortion(item.consumedBatches, already, qty),
     });
   }
@@ -187,7 +187,7 @@ async function submitCustomerReturn(invoiceNo) {
       return;
     }
 
-    // ✅ ফিক্স: item.consumedBatches পাস করা হচ্ছে — সঠিক ব্যাচে স্টক ফেরত
+    // ✅ সংশোধন: item.consumedBatches পাস করা হচ্ছে — সঠিক ব্যাচে স্টক ফেরত
     items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
     if (method === 'বাকি সমন্বয়') applyCustomerDueChange(sale.customerId, -amount, 0);
     APP_STATE.returns.push(returnDoc);
@@ -357,7 +357,7 @@ async function deleteReturnConfirm(returnId) {
     const res = await apiDeleteReturn(ret);
     if (!res.success) return toast(res.message, 'w');
     if (ret.returnType === 'customer') {
-      // ✅ ফিক্স: generic destockItem()-এর বদলে consumedBatches-সচেতন precise destock
+      // ✅ সংশোধন: generic destockItem()-এর বদলে consumedBatches-সচেতন precise destock
       ret.items.forEach(item => destockFromConsumed(item.medId, item.qty, item.consumedBatches));
       if (ret.refundMethod === 'বাকি সমন্বয়') applyCustomerDueChange(ret.partyId, ret.amount, 0);
     } else {
