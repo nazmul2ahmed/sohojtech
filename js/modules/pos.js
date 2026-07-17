@@ -1,5 +1,11 @@
 'use strict';
 
+// ✅ ফিক্স: শুধু Date.now() না — একই মিলিসেকেন্ডে দুই ডিভাইস/ট্যাব থেকে sale
+// এলে ID কলিশনের ঝুঁকি ছিল (Firestore rule saleId==invoiceNo চেক করে, duplicate
+// হলে silently ওভাররাইট/reject হতে পারত)
+function genInvoiceNo() {
+  return 'INV-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+}
 // ════════════════════════════════════════════════════════════
 // POS / SALES MODULE
 // ════════════════════════════════════════════════════════════
@@ -341,7 +347,7 @@ async function submitPOSSale() {
 
   const customer = APP_STATE.customers.find(c => c.id === custId);
   const custName = custId === 'WALK_IN' ? 'নগদ গ্রাহক' : (customer?.name || custId);
-  const invoiceNo = 'INV-' + Date.now();
+  const invoiceNo = genInvoiceNo(); // ✅ ফিক্স: কলিশন-প্রতিরোধী ID
 
   const sale = {
     invoiceNo, date, customerId: custId, customerName: custName,
@@ -364,8 +370,6 @@ async function submitPOSSale() {
     }
 
     if (res.queued) {
-      // ✅ অফলাইনে সংরক্ষিত — স্টক/বাকি তখনই আপডেট হবে না, sync সফল হলে
-      // sync-engine.js-এর applySyncedEntryToState() সেটা করবে
       toast(res.message, 'w');
       resetPOS();
       refreshSyncBadge();
@@ -385,6 +389,7 @@ async function submitPOSSale() {
     btn.innerHTML = idleHTML;
   }
 }
+
 function showPOSError(msg) {
   const el = document.getElementById('pos-error');
   el.textContent = msg;
