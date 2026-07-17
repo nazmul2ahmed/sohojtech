@@ -108,6 +108,7 @@ function calcRetCustTotal() {
 }
 
 async function submitCustomerReturn(invoiceNo) {
+  if (guardReadOnly()) return;
   hideEl('ret-error');
   const sale = APP_STATE.sales.find(s => s.invoiceNo === invoiceNo);
   const customer = APP_STATE.customers.find(c => c.id === sale.customerId);
@@ -228,6 +229,7 @@ function calcRetSupTotal() {
 }
 
 async function submitSupplierReturn(purId) {
+  if (guardReadOnly()) return;
   hideEl('ret-error');
   const pur = APP_STATE.purchases.find(p => p.purchaseId === purId);
   const supplier = APP_STATE.suppliers.find(s => s.id === pur.supplierId);
@@ -316,6 +318,7 @@ function renderTodayReturns() {
 // DELETE RETURN
 // ────────────────────────────────────────────────────────────
 async function deleteReturnConfirm(returnId) {
+  if (guardReadOnly()) return;
   const ret = APP_STATE.returns.find(r => r.returnId === returnId);
   if (!ret || !confirm('এই রিটার্ন মুছবেন? প্রভাব উল্টানো হবে।')) return;
   try {
