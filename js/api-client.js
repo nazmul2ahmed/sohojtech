@@ -343,14 +343,21 @@ async function apiSubmitSale(sale, opts = {}) {
         item.costPrice = result.weightedCost;
         item.consumedBatches = result.consumedBatches;
 
+        // ✅ ফিক্স (ধাপ ২৩): computeInventoryDerivedFields() দিয়ে
+        // status/nearestExpiry-সহ সব ফিল্ড ঠিকভাবে রিক্যালকুলেট
+        const med = APP_STATE.medicines.find(m => m.id === item.medId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+        const derived = computeInventoryDerivedFields(result.batches, reorderLevel);
+
         invUpdates.push({
           ref: invRefs[i],
           fields: {
-            batches: result.batches,
-            totalStock: result.totalStock,
-            costValue: result.costValue,
-            mrpValue: result.mrpValue,
-            nearestExpiry: result.nearestExpiry,
+            batches: derived.batches,
+            totalStock: derived.totalStock,
+            costValue: derived.costValue,
+            mrpValue: derived.mrpValue,
+            nearestExpiry: derived.nearestExpiry,
+            status: derived.status,
           },
         });
       }
@@ -394,7 +401,7 @@ async function apiDeleteSale(sale) {
       const custDoc = custRef ? await tx.get(custRef) : null;
 
       const invMap = {};
-      uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null }; });
+      uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null, medId: id }; });
 
       sale.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
@@ -411,8 +418,19 @@ async function apiDeleteSale(sale) {
       tx.delete(userCol('sales').doc(sale.invoiceNo));
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
-        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
-        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true });
+        // ✅ ফিক্স (ধাপ ২৩): status/nearestExpiry এখন সঠিকভাবে রিক্যালকুলেট
+        const med = APP_STATE.medicines.find(m => m.id === e.medId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+        const derived = computeInventoryDerivedFields(e.data.batches, reorderLevel);
+        tx.set(e.ref, {
+          ...e.data,
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
+          status: derived.status,
+        }, { merge: true });
       });
       if (custRef && custFields) tx.update(custRef, custFields);
     });
@@ -500,9 +518,22 @@ async function apiDeletePurchase(purchase) {
       const invUpdates = purchase.items.map((item, idx) => {
         const invDoc = invDocs[idx]; if (!invDoc.exists) return null;
         const inv = invDoc.data();
-        const batches = (inv.batches || []).filter(b => b.batchId !== item.batchId);
-        const totalStock = batches.reduce((a, b) => a + b.stock, 0);
-        return { ref: invRefs[idx], fields: { batches, totalStock, costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)) } };
+        const remainingBatches = (inv.batches || []).filter(b => b.batchId !== item.batchId);
+        // ✅ ফিক্স (ধাপ ২৩): status/nearestExpiry এখন সঠিকভাবে রিক্যালকুলেট
+        const med = APP_STATE.medicines.find(m => m.id === item.medId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+        const derived = computeInventoryDerivedFields(remainingBatches, reorderLevel);
+        return {
+          ref: invRefs[idx],
+          fields: {
+            batches: derived.batches,
+            totalStock: derived.totalStock,
+            costValue: derived.costValue,
+            mrpValue: derived.mrpValue,
+            nearestExpiry: derived.nearestExpiry,
+            status: derived.status,
+          },
+        };
       }).filter(Boolean);
 
       let supFields = null;
@@ -536,7 +567,7 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
       const custDoc = custRef ? await tx.get(custRef) : null;
 
       const invMap = {};
-      uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null }; });
+      uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null, medId: id }; });
 
       returnDoc.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
@@ -552,8 +583,19 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
       tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
-        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
-        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true });
+        // ✅ ফিক্স (ধাপ ২৩): status/nearestExpiry এখন সঠিকভাবে রিক্যালকুলেট
+        const med = APP_STATE.medicines.find(m => m.id === e.medId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+        const derived = computeInventoryDerivedFields(e.data.batches, reorderLevel);
+        tx.set(e.ref, {
+          ...e.data,
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
+          status: derived.status,
+        }, { merge: true });
       });
       if (custRef && custFields) tx.update(custRef, custFields);
     });
@@ -575,7 +617,7 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
       const supDoc = supRef ? await tx.get(supRef) : null;
 
       const invMap = {};
-      uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null }; });
+      uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null, medId: id }; });
 
       returnDoc.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
@@ -595,9 +637,19 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
       tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
-        const sorted = e.data.batches.slice().sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
-        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
-        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: sorted[0]?.expiry || '' }, { merge: true });
+        // ✅ ফিক্স (ধাপ ২৩): status/nearestExpiry এখন সঠিকভাবে রিক্যালকুলেট
+        const med = APP_STATE.medicines.find(m => m.id === e.medId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+        const derived = computeInventoryDerivedFields(e.data.batches, reorderLevel);
+        tx.set(e.ref, {
+          ...e.data,
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
+          status: derived.status,
+        }, { merge: true });
       });
       if (supRef && supFields) tx.update(supRef, supFields);
     });
@@ -624,7 +676,7 @@ async function apiDeleteReturn(ret) {
       const partyDoc = partyRef ? await tx.get(partyRef) : null;
 
       const invMap = {};
-      uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null }; });
+      uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null, medId: id }; });
 
       if (ret.returnType === 'customer') {
         ret.items.forEach(item => {
@@ -666,8 +718,19 @@ async function apiDeleteReturn(ret) {
       tx.delete(userCol('returns').doc(ret.returnId));
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
-        const ts = e.data.batches.reduce((a, b) => a + b.stock, 0);
-        tx.set(e.ref, { ...e.data, totalStock: ts, costValue: round2(e.data.batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(e.data.batches.reduce((a, b) => a + b.mrp * b.stock, 0)) }, { merge: true });
+        // ✅ ফিক্স (ধাপ ২৩): status/nearestExpiry এখন সঠিকভাবে রিক্যালকুলেট
+        const med = APP_STATE.medicines.find(m => m.id === e.medId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+        const derived = computeInventoryDerivedFields(e.data.batches, reorderLevel);
+        tx.set(e.ref, {
+          ...e.data,
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
+          status: derived.status,
+        }, { merge: true });
       });
       if (partyRef && partyFields) tx.update(partyRef, partyFields);
     });
@@ -698,26 +761,54 @@ async function apiSaveSettings(data) {
 async function apiSubmitOpeningEntry(entry) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
-    const batch = fbDb.batch();
-    batch.set(userCol('openingEntries').doc(entry.entryId), entry);
-    if (entry.category === 'স্টক') {
-      const invRef = userCol('inventory').doc(entry.medicineId);
-      const invDoc = await cget(invRef);
-      const existing = invDoc.exists ? invDoc.data() : null;
-      const newBatch = { batchId: entry.batchId, expiry: entry.expiryDate || '', stock: entry.qty, cost: entry.costPrice, mrp: entry.mrp, sell: entry.sellPrice };
-      const batches = [...(existing?.batches || []), newBatch];
-      const fields = { medId: entry.medicineId, brand: entry.brand || existing?.brand || '', doseForm: existing?.doseForm || '', strength: existing?.strength || '', batches, totalStock: batches.reduce((a, b) => a + b.stock, 0), costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: existing?.nearestExpiry || entry.expiryDate || '', sellPrice: entry.sellPrice > 0 ? entry.sellPrice : (existing?.sellPrice || 0), status: existing?.status || 'ok' };
-      if (invDoc.exists) batch.update(invRef, fields); else batch.set(invRef, fields);
-    } else if (entry.category === 'গ্রাহক বাকি') {
-      const custRef = userCol('customers').doc(entry.clientId);
-      const custDoc = await cget(custRef);
-      if (custDoc.exists) batch.update(custRef, { due: round2((custDoc.data().due || 0) + entry.amount) });
-    } else if (entry.category === 'সরবরাহকারী বাকি') {
-      const supRef = userCol('suppliers').doc(entry.supplierId);
-      const supDoc = await cget(supRef);
-      if (supDoc.exists) batch.update(supRef, { totalPayable: round2((supDoc.data().totalPayable || 0) + entry.amount) });
-    }
-    await batch.commit();
+    const entryRef = userCol('openingEntries').doc(entry.entryId);
+    const invRef = entry.category === 'স্টক' ? userCol('inventory').doc(entry.medicineId) : null;
+    const custRef = entry.category === 'গ্রাহক বাকি' ? userCol('customers').doc(entry.clientId) : null;
+    const supRef = entry.category === 'সরবরাহকারী বাকি' ? userCol('suppliers').doc(entry.supplierId) : null;
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDoc = invRef ? await tx.get(invRef) : null;
+      const custDoc = custRef ? await tx.get(custRef) : null;
+      const supDoc = supRef ? await tx.get(supRef) : null;
+
+      // ✅ কম্পিউট (কোনো write এখনো হয়নি)
+      let invFields = null, invExists = false;
+      if (invRef) {
+        const existing = invDoc.exists ? invDoc.data() : null;
+        const newBatch = { batchId: entry.batchId, expiry: entry.expiryDate || '', stock: entry.qty, cost: entry.costPrice, mrp: entry.mrp, sell: entry.sellPrice };
+        const batches = [...(existing?.batches || []), newBatch];
+        invFields = {
+          medId: entry.medicineId, brand: entry.brand || existing?.brand || '',
+          doseForm: existing?.doseForm || '', strength: existing?.strength || '',
+          batches,
+          totalStock: batches.reduce((a, b) => a + b.stock, 0),
+          costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)),
+          mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)),
+          nearestExpiry: existing?.nearestExpiry || entry.expiryDate || '',
+          sellPrice: entry.sellPrice > 0 ? entry.sellPrice : (existing?.sellPrice || 0),
+          status: existing?.status || 'ok',
+        };
+        invExists = invDoc.exists;
+      }
+
+      let custFields = null;
+      if (custRef && custDoc.exists) {
+        custFields = { due: round2((custDoc.data().due || 0) + entry.amount) };
+      }
+
+      let supFields = null;
+      if (supRef && supDoc.exists) {
+        supFields = { totalPayable: round2((supDoc.data().totalPayable || 0) + entry.amount) };
+      }
+
+      // ✅ সব write পরে
+      tx.set(entryRef, entry);
+      if (invRef && invFields) { if (invExists) tx.update(invRef, invFields); else tx.set(invRef, invFields); }
+      if (custRef && custFields) tx.update(custRef, custFields);
+      if (supRef && supFields) tx.update(supRef, supFields);
+    });
+
     return { success: true };
   } catch (err) { return { success: false, message: err.message }; }
 }
@@ -725,26 +816,47 @@ async function apiSubmitOpeningEntry(entry) {
 async function apiDeleteOpeningEntry(entry) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
-    const batch = fbDb.batch();
-    batch.delete(userCol('openingEntries').doc(entry.entryId));
-    if (entry.category === 'স্টক' && entry.batchId) {
-      const invRef = userCol('inventory').doc(entry.medicineId);
-      const invDoc = await cget(invRef);
-      if (invDoc.exists) {
+    const entryRef = userCol('openingEntries').doc(entry.entryId);
+    const invRef = (entry.category === 'স্টক' && entry.batchId) ? userCol('inventory').doc(entry.medicineId) : null;
+    const custRef = (entry.category === 'গ্রাহক বাকি' && entry.clientId) ? userCol('customers').doc(entry.clientId) : null;
+    const supRef = (entry.category === 'সরবরাহকারী বাকি' && entry.supplierId) ? userCol('suppliers').doc(entry.supplierId) : null;
+
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const invDoc = invRef ? await tx.get(invRef) : null;
+      const custDoc = custRef ? await tx.get(custRef) : null;
+      const supDoc = supRef ? await tx.get(supRef) : null;
+
+      // ✅ কম্পিউট
+      let invFields = null;
+      if (invRef && invDoc.exists) {
         const inv = invDoc.data();
         const batches = (inv.batches || []).filter(b => b.batchId !== entry.batchId);
-        batch.update(invRef, { batches, totalStock: batches.reduce((a, b) => a + b.stock, 0), costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)) });
+        invFields = {
+          batches,
+          totalStock: batches.reduce((a, b) => a + b.stock, 0),
+          costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)),
+          mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)),
+        };
       }
-    } else if (entry.category === 'গ্রাহক বাকি' && entry.clientId) {
-      const custRef = userCol('customers').doc(entry.clientId);
-      const custDoc = await cget(custRef);
-      if (custDoc.exists) batch.update(custRef, { due: Math.max(0, round2((custDoc.data().due || 0) - entry.amount)) });
-    } else if (entry.category === 'সরবরাহকারী বাকি' && entry.supplierId) {
-      const supRef = userCol('suppliers').doc(entry.supplierId);
-      const supDoc = await cget(supRef);
-      if (supDoc.exists) batch.update(supRef, { totalPayable: Math.max(0, round2((supDoc.data().totalPayable || 0) - entry.amount)) });
-    }
-    await batch.commit();
+
+      let custFields = null;
+      if (custRef && custDoc.exists) {
+        custFields = { due: Math.max(0, round2((custDoc.data().due || 0) - entry.amount)) };
+      }
+
+      let supFields = null;
+      if (supRef && supDoc.exists) {
+        supFields = { totalPayable: Math.max(0, round2((supDoc.data().totalPayable || 0) - entry.amount)) };
+      }
+
+      // ✅ সব write পরে
+      tx.delete(entryRef);
+      if (invRef && invFields) tx.update(invRef, invFields);
+      if (custRef && custFields) tx.update(custRef, custFields);
+      if (supRef && supFields) tx.update(supRef, supFields);
+    });
+
     return { success: true };
   } catch (err) { return { success: false, message: err.message }; }
 }
