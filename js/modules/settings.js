@@ -47,8 +47,8 @@ function renderSettingsModule() {
       <div class="space-y-4">
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2"><i class="fa-solid fa-database text-slate-400"></i> ডেটাবেস সংযোগ</h5>
-          <div class="flex items-center gap-2 text-xs text-emerald-500 mb-3">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Firestore সংযুক্ত
+          <div id="settings-db-status" class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-slate-300 animate-pulse"></span> লোড হচ্ছে...
           </div>
         </div>
 
@@ -87,7 +87,25 @@ function renderSettingsModule() {
     </div>
   `;
 
+  updateSettingsDbStatusCard();
   refreshSettingsSyncStatusCard();
+}
+
+// ✅ ধাপ ২২: আগে হার্ডকোডেড "Firestore সংযুক্ত" (সবুজ, সবসময়) দেখাত —
+// এখন navigator.onLine অনুযায়ী আসল সংযোগ-অবস্থা দেখায়। conn-status-badge
+// (header)-এর মতোই app.js-এর online/offline ইভেন্ট থেকে লাইভ আপডেট হয়,
+// তাই Settings ট্যাব খোলা থাকা অবস্থায় নেট হারালে/ফিরলেও সাথে সাথে বদলায়।
+function updateSettingsDbStatusCard() {
+  const box = document.getElementById('settings-db-status');
+  if (!box) return; // ইউজার অন্য ট্যাবে থাকলে নিরাপদে কিছু করবে না
+
+  if (navigator.onLine) {
+    box.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Firestore সংযুক্ত`;
+    box.className = 'flex items-center gap-2 text-xs text-emerald-500';
+  } else {
+    box.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500"></span> অফলাইন — সংযোগ নেই`;
+    box.className = 'flex items-center gap-2 text-xs text-red-500';
+  }
 }
 
 // ✅ ধাপ ২১: আগে হার্ডকোডেড "নিষ্ক্রিয়" দেখাত (opacity-60 দিয়ে dimmed) —
