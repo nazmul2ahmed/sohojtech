@@ -108,6 +108,7 @@ function onObMedSelect(medId) {
 }
 
 async function submitOpeningEntry() {
+  if (guardReadOnly()) return;
   hideEl('ob-error');
   const cat = document.getElementById('ob-cat').value;
   const amount = round2(parseFloat(document.getElementById('ob-amount').value) || 0);
@@ -236,6 +237,7 @@ function renderObTable() {
 
 // ✅ Delete করলে সাইড-ইফেক্ট reverse হয়
 async function deleteOpeningEntry(entryId) {
+  if (guardReadOnly()) return;
   if (!confirm('এন্ট্রি মুছবেন? সংশ্লিষ্ট স্টক/বাকি প্রভাব ফিরিয়ে নেওয়া হবে।')) return;
   const entry = APP_STATE.openingEntries.find(e => e.entryId === entryId);
   if (!entry) return;
