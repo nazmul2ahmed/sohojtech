@@ -5,8 +5,16 @@ document.addEventListener('DOMContentLoaded', () => {
   applyStoredTheme();
   initAuthGate();   // ← বদলানো হলো (আগে ছিল initApp())
 });
-window.addEventListener('online', () => { updateConnBadge(true); toast('ইন্টারনেট সংযোগ ফিরেছে।', 's'); });
-window.addEventListener('offline', () => { updateConnBadge(false); toast('অফলাইন — নতুন এন্ট্রি সাময়িক বন্ধ থাকবে।', 'w'); });
+window.addEventListener('online', () => {
+  updateConnBadge(true);
+  toast('ইন্টারনেট সংযোগ ফিরেছে।', 's');
+  updateSettingsDbStatusCard(); // ✅ ধাপ ২২: Settings ট্যাব খোলা থাকলে কার্ডও লাইভ আপডেট
+});
+window.addEventListener('offline', () => {
+  updateConnBadge(false);
+  toast('অফলাইন — নতুন এন্ট্রি সাময়িক বন্ধ থাকবে।', 'w');
+  updateSettingsDbStatusCard(); // ✅ ধাপ ২২
+});
 
 function updateConnBadge(isOnline) {
   const badge = document.getElementById('conn-status-badge');
