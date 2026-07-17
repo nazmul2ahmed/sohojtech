@@ -182,6 +182,21 @@ async function confirmReset() {
   try {
     const res = await apiResetAllData();
     if (!res.success) { toast(res.message, 'w'); btn.disabled = false; btn.textContent = 'মুছে ফেলুন'; return; }
+
+    // ✅ ধাপ ১৯: Firestore রিসেট সফল হওয়ার পর IndexedDB-এর pending sync
+    // queue-ও মুছে দেওয়া হচ্ছে, নাহলে পুরনো/অফলাইন এন্ট্রি সদ্য-খালি
+    // অ্যাকাউন্টে পরে সিঙ্ক হয়ে ভুল ডেটা ঢুকিয়ে দিতে পারে।
+    try {
+      await clearPendingWritesForUser();
+    } catch (err) {
+      console.warn('Pending sync queue পরিষ্কার করতে সমস্যা:', err);
+      // এটা রিসেট প্রক্রিয়াকে থামাবে না — Firestore ইতিমধ্যে খালি হয়ে গেছে,
+      // এটা শুধু IndexedDB-এর একটা সেকেন্ডারি ক্লিনআপ পদক্ষেপ
+    }
+    APP_STATE.pendingSales = [];
+    APP_STATE.pendingPurchases = [];
+    document.getElementById('sync-status-badge')?.remove();
+
     document.getElementById('reset-modal').remove();
     toast('সব ডেটা মুছে ফেলা হয়েছে। রিলোড হচ্ছে...', 's');
     setTimeout(() => location.reload(), 1200);
