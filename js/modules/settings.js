@@ -45,17 +45,17 @@ function renderSettingsModule() {
       </div>
 
       <div class="space-y-4">
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 opacity-60">
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2"><i class="fa-solid fa-database text-slate-400"></i> ডেটাবেস সংযোগ</h5>
           <div class="flex items-center gap-2 text-xs text-emerald-500 mb-3">
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Firestore সংযুক্ত
           </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 opacity-60">
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2"><i class="fa-solid fa-cloud text-slate-400"></i> অফলাইন সিঙ্ক স্ট্যাটাস</h5>
-          <div class="flex items-center gap-2 text-xs text-slate-400">
-            <span class="w-2 h-2 rounded-full bg-slate-300"></span> নিষ্ক্রিয়
+          <div id="settings-sync-status" class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-slate-300 animate-pulse"></span> লোড হচ্ছে...
           </div>
         </div>
 
@@ -79,12 +79,42 @@ function renderSettingsModule() {
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2 flex items-center gap-2"><i class="fa-solid fa-circle-info text-brand"></i> অ্যাপ তথ্য</h5>
           <div class="text-xs text-slate-500 space-y-1">
             <div>সংস্করণ: <span class="font-mono">${esc(APP_CONFIG.version)}</span></div>
-            <div>ধাপ: Phase D — Firestore রিওয়্যারিং</div>
+            <div>অফলাইন সিঙ্ক: <span class="font-semibold ${APP_CONFIG.features.offlineSync ? 'text-emerald-600' : 'text-slate-400'}">${APP_CONFIG.features.offlineSync ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></div>
+            <div>রিড-ওনলি গার্ড: <span class="font-semibold text-emerald-600">সক্রিয়</span></div>
           </div>
         </div>
       </div>
     </div>
   `;
+
+  refreshSettingsSyncStatusCard();
+}
+
+// ✅ ধাপ ২১: আগে হার্ডকোডেড "নিষ্ক্রিয়" দেখাত (opacity-60 দিয়ে dimmed) —
+// এখন প্রকৃত pending queue count দিয়ে আসল অবস্থা দেখায়। getPendingWriteCount()
+// async, তাই render-এর পর আলাদা করে কল করে DOM আপডেট করা হচ্ছে (progressive)।
+async function refreshSettingsSyncStatusCard() {
+  const box = document.getElementById('settings-sync-status');
+  if (!box) return; // ইউজার ইতিমধ্যে অন্য ট্যাবে চলে গেলে safe no-op
+
+  try {
+    const counts = await getPendingWriteCount();
+    if (!document.getElementById('settings-sync-status')) return; // রেসের সময় ট্যাব বদলালে
+
+    if (counts.total === 0) {
+      box.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> সক্রিয় — কোনো পেন্ডিং এন্ট্রি নেই`;
+      box.className = 'flex items-center gap-2 text-xs text-emerald-600';
+    } else if (counts.failed > 0) {
+      box.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500"></span> ${counts.total}টা পেন্ডিং (${counts.failed}টা ব্যর্থ) — <button onclick="openSyncPanel()" class="underline font-semibold">দেখুন</button>`;
+      box.className = 'flex items-center gap-2 text-xs text-red-600';
+    } else {
+      box.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500"></span> ${counts.total}টা সিঙ্ক অপেক্ষমাণ — <button onclick="openSyncPanel()" class="underline font-semibold">দেখুন</button>`;
+      box.className = 'flex items-center gap-2 text-xs text-amber-600';
+    }
+  } catch (err) {
+    box.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-300"></span> স্ট্যাটাস লোড করা যায়নি`;
+    box.className = 'flex items-center gap-2 text-xs text-slate-400';
+  }
 }
 
 async function saveSettingsForm() {
