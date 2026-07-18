@@ -855,12 +855,24 @@ async function apiDeleteOpeningEntry(entry) {
       let invFields = null;
       if (invRef && invDoc.exists) {
         const inv = invDoc.data();
-        const batches = (inv.batches || []).filter(b => b.batchId !== entry.batchId);
+        const rawBatches = (inv.batches || []).filter(b => b.batchId !== entry.batchId);
+
+        const med = APP_STATE.medicines.find(m => m.id === entry.medicineId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+
+        // ✅ ফিক্স (ধাপ ২৩, রিফ্যাক্টর): shared হেল্পার — আগে শুধু
+        // totalStock/costValue/mrpValue লেখা হতো, status/nearestExpiry
+        // Firestore-এ stale থেকে যেত ব্যাচ ডিলিটের পরও। এখন সব ফিল্ড
+        // সঠিকভাবে রিক্যালকুলেট হচ্ছে।
+        const derived = computeInventoryDerivedFields(rawBatches, reorderLevel);
+
         invFields = {
-          batches,
-          totalStock: batches.reduce((a, b) => a + b.stock, 0),
-          costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)),
-          mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)),
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
+          status: derived.status,
         };
       }
 
