@@ -255,3 +255,45 @@ function closeMedDisambiguation() {
   document.removeEventListener('mousedown', _medDisambigOutsideHandler, true);
   _medDisambig = null;
 }
+
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ২৭: BOOTLOAD CAP HINT — sales/purchases/returns bootload-এ
+// orderBy+limit cap থাকার কারণে পুরনো এন্ট্রি bootload-এ নাও থাকতে
+// পারে। এই হেল্পার cap ছোঁয়া থাকলে (এবং older history এখনো লোড না
+// হলে) একটা সতর্কতা ব্যানার + "লোড করুন" বাটন তৈরি করে — POS/Purchase/
+// Returns তিন জায়গাতেই পুনঃব্যবহারযোগ্য, প্রতিটার নিজস্ব rerender
+// ফাংশন-নাম স্ট্রিং হিসেবে পাস করে।
+// ════════════════════════════════════════════════════════════
+function capHintHTML(type, btnId, rerenderFnName, label) {
+  if (!APP_STATE.capReached || !APP_STATE.capReached[type] || APP_STATE.olderHistoryLoaded) return '';
+  return `
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 m-3 flex items-center justify-between gap-2 flex-wrap">
+      <span><i class="fa-solid fa-triangle-exclamation mr-1"></i>${esc(label)}</span>
+      <button id="${btnId}" onclick="handleLoadOlderHistoryClick('${btnId}','${rerenderFnName}')" class="text-brand font-semibold hover:underline whitespace-nowrap">
+        <i class="fa-solid fa-clock-rotate-left mr-1"></i>পুরনো হিস্টোরি লোড করুন
+      </button>
+    </div>`;
+}
+
+// সফল হলে APP_STATE.olderHistoryLoaded = true হয়ে যায়, তাই capHintHTML()
+// পরের রেন্ডারে আর কিছু দেখাবে না — rerenderFnName দিয়ে ডাইনামিকভাবে
+// সঠিক মডিউলের রি-রেন্ডার ফাংশন কল হয় (POS/Purchase/Returns যেটাই হোক)।
+async function handleLoadOlderHistoryClick(btnId, rerenderFnName) {
+  const btn = document.getElementById(btnId);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> লোড হচ্ছে...'; }
+  try {
+    const res = await apiGetOlderHistory();
+    if (!res.success) {
+      toast('পুরনো হিস্টোরি লোড ব্যর্থ: ' + res.message, 'w');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i>পুরনো হিস্টোরি লোড করুন'; }
+      return;
+    }
+    mergeOlderHistoryIntoState(res);
+    APP_STATE.olderHistoryLoaded = true;
+    toast('পুরনো হিস্টোরি লোড হয়েছে।', 's');
+    if (typeof window[rerenderFnName] === 'function') window[rerenderFnName]();
+  } catch (err) {
+    showFatalError('পুরনো হিস্টোরি লোডে সমস্যা:\n' + err.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i>পুরনো হিস্টোরি লোড করুন'; }
+  }
+}
