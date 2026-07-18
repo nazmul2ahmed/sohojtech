@@ -1,5 +1,40 @@
 'use strict';
 
+// ✅ ধাপ ২৮: বাংলাদেশ NBR ফিসক্যাল ইয়ার — জুলাই ১ থেকে জুন ৩০
+const FISCAL_MONTHS = [
+  { value: 7, label: 'জুলাই' }, { value: 8, label: 'আগস্ট' }, { value: 9, label: 'সেপ্টেম্বর' },
+  { value: 10, label: 'অক্টোবর' }, { value: 11, label: 'নভেম্বর' }, { value: 12, label: 'ডিসেম্বর' },
+  { value: 1, label: 'জানুয়ারি' }, { value: 2, label: 'ফেব্রুয়ারি' }, { value: 3, label: 'মার্চ' },
+  { value: 4, label: 'এপ্রিল' }, { value: 5, label: 'মে' }, { value: 6, label: 'জুন' },
+];
+
+// বর্তমান তারিখ থেকে শুরু করে গত ১০ বছরের ফিসক্যাল ইয়ার অপশন তৈরি করে
+// value = FY-শুরুর ক্যালেন্ডার বছর (যেমন 2024 মানে "2024-25")
+function getFiscalYearOptions(yearsBack = 10) {
+  const now = new Date();
+  const currentCalYear = now.getFullYear();
+  const currentFYStartYear = now.getMonth() >= 6 ? currentCalYear : currentCalYear - 1; // মাস ৬=জুলাই (0-indexed)
+
+  const options = [];
+  for (let i = 0; i < yearsBack; i++) {
+    const startYear = currentFYStartYear - i;
+    options.push({ value: startYear, label: `${startYear}-${String(startYear + 1).slice(2)}` });
+  }
+  return options;
+}
+
+// FY-শুরুর বছর + ঐচ্ছিক ক্যালেন্ডার-মাস (১-১২) থেকে fromDate/toDate বের করে
+function getFiscalPeriodRange(fyStartYear, month) {
+  if (!month) {
+    return { fromDate: `${fyStartYear}-07-01`, toDate: `${fyStartYear + 1}-06-30` };
+  }
+  // জুলাই(৭)-ডিসেম্বর(১২) → fyStartYear; জানুয়ারি(১)-জুন(৬) → fyStartYear+1
+  const calYear = month >= 7 ? fyStartYear : fyStartYear + 1;
+  const lastDay = new Date(calYear, month, 0).getDate();
+  const mm = String(month).padStart(2, '0');
+  return { fromDate: `${calYear}-${mm}-01`, toDate: `${calYear}-${mm}-${String(lastDay).padStart(2, '0')}` };
+}
+
 function renderAnalyticsModule() {
   const c = document.getElementById('analytics-content');
   if (!c) return;
