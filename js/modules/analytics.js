@@ -42,8 +42,8 @@ function renderAnalyticsModule() {
   APP_STATE.anaFrom = APP_STATE.anaFrom || addDaysStr(today, -29);
   APP_STATE.anaTo = APP_STATE.anaTo || today;
 
-  // ✅ ধাপ ২৭: তিনটার যেকোনো একটাতে cap ছোঁয়া থাকলে সাধারণ নোট দেখাবে
   const anyCapReached = APP_STATE.capReached && (APP_STATE.capReached.sales || APP_STATE.capReached.purchases || APP_STATE.capReached.returns);
+  const fyOptions = getFiscalYearOptions();
 
   c.innerHTML = `
   <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
@@ -62,6 +62,27 @@ function renderAnalyticsModule() {
            </button>`}
     </div>
   </div>
+
+  <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-semibold text-slate-500 whitespace-nowrap"><i class="fa-solid fa-calendar-days mr-1"></i>অর্থবছর</label>
+      <select id="fy-select" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white">
+        ${fyOptions.map(fy => `<option value="${fy.value}">${esc(fy.label)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-semibold text-slate-500 whitespace-nowrap">মাস (ঐচ্ছিক)</label>
+      <select id="fy-month-select" class="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white">
+        <option value="">— পুরো বছর —</option>
+        ${FISCAL_MONTHS.map(m => `<option value="${m.value}">${esc(m.label)}</option>`).join('')}
+      </select>
+    </div>
+    <button id="fy-load-btn" onclick="loadFiscalPeriodData()" class="px-3 py-1.5 text-xs bg-brand hover:bg-blue-700 text-white rounded-lg font-semibold">
+      <i class="fa-solid fa-download mr-1"></i> এই মেয়াদের ডেটা লোড করুন
+    </button>
+    <span id="fy-load-status" class="text-xs text-slate-400"></span>
+  </div>
+
   ${anyCapReached && !APP_STATE.olderHistoryLoaded ? `
   <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-4">
     <i class="fa-solid fa-circle-info mr-1"></i> বুট-টাইমে সাম্প্রতিক ৮,০০০টা এন্ট্রি পর্যন্ত লোড হয়েছে (পারফরম্যান্সের জন্য) — এই মেয়াদের কিছু পুরনো তথ্য এখনো এই চার্টে/সারসংক্ষেপে অন্তর্ভুক্ত নাও থাকতে পারে। সম্পূর্ণ ছবি পেতে ওপরের "১২ মাসের আগের হিস্টোরি লোড করুন" বাটন চাপুন।
@@ -222,6 +243,42 @@ async function loadOlderHistory() {
   } catch (err) {
     showFatalError('পুরনো হিস্টোরি লোডে সমস্যা:\n' + err.message);
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> ১২ মাসের আগের হিস্টোরি লোড করুন'; }
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ২৮: নির্বাচিত ফিসক্যাল ইয়ার/মাসের ডেটা টার্গেটেডভাবে লোড
+// ────────────────────────────────────────────────────────────
+async function loadFiscalPeriodData() {
+  const fyStartYear = parseInt(document.getElementById('fy-select').value, 10);
+  const monthVal = document.getElementById('fy-month-select').value;
+  const month = monthVal ? parseInt(monthVal, 10) : null;
+  const range = getFiscalPeriodRange(fyStartYear, month);
+
+  const btn = document.getElementById('fy-load-btn');
+  const statusEl = document.getElementById('fy-load-status');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> লোড হচ্ছে...';
+  statusEl.textContent = '';
+
+  try {
+    const res = await apiGetHistoryByPeriod(range.fromDate, range.toDate);
+    if (!res.success) {
+      toast('মেয়াদের ডেটা লোড ব্যর্থ: ' + res.message, 'w');
+      statusEl.textContent = 'লোড ব্যর্থ হয়েছে।';
+      return;
+    }
+    // ✅ existing dedup-safe merge প্যাটার্ন পুনর্ব্যবহার — ডুপ্লিকেট হবে না
+    mergeOlderHistoryIntoState(res);
+    toast(`${range.fromDate} থেকে ${range.toDate} পর্যন্ত ডেটা লোড হয়েছে।`, 's');
+    statusEl.textContent = `সর্বশেষ লোড: ${range.fromDate} — ${range.toDate}`;
+    renderAnaBody();
+  } catch (err) {
+    showFatalError('মেয়াদের ডেটা লোডে সমস্যা:\n' + err.message);
+    statusEl.textContent = 'লোড ব্যর্থ হয়েছে।';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-download mr-1"></i> এই মেয়াদের ডেটা লোড করুন';
   }
 }
 
