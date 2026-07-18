@@ -354,7 +354,7 @@ async function submitPurchase() {
 
   const supplier = APP_STATE.suppliers.find(s => s.id === supId);
   const totalCost = round2(validItems.reduce((a, i) => a + i.qty * i.purchasePrice, 0));
-  const purchaseId = genPurchaseId(); // ✅ সংশোধন: কলিশন-প্রতিরোধী ID (আগের বার্তায় ভুলে বাদ পড়েছিল)
+  const purchaseId = genPurchaseId();
 
   const itemsWithReorder = validItems.map(i => {
     const med = APP_STATE.medicines.find(m => m.id === i.medId);
@@ -386,6 +386,7 @@ async function submitPurchase() {
       toast(res.message, 'w');
       resetPurchase();
       refreshSyncBadge();
+      openReceiptModal('purchase', purchase); // ✅ ধাপ ৩০
     } else {
       validItems.forEach(item => addPurchaseBatch(item, date));
       APP_STATE.purchases.push(purchase);
@@ -396,6 +397,7 @@ async function submitPurchase() {
       toast(res.message, 's');
       resetPurchase();
       renderTodayPurchases();
+      openReceiptModal('purchase', purchase); // ✅ ধাপ ৩০
     }
     btn.disabled = false;
     btn.innerHTML = idleHTML;
@@ -459,7 +461,6 @@ function renderTodayPurchases() {
   const filterDate = APP_STATE.purListDate || todayStr();
   const listPur = APP_STATE.purchases.filter(p => p.date === filterDate).slice().reverse();
 
-  // ✅ ধাপ ২৭
   const capHint = capHintHTML('purchases', 'pur-load-older-btn', 'renderTodayPurchases', 'সাম্প্রতিক ৮,০০০টার বেশি ক্রয় থাকলে পুরনো তারিখের এন্ট্রি এখনো নাও দেখাতে পারে।');
 
   container.innerHTML = capHint + (listPur.length ? listPur.map(p => `
@@ -473,9 +474,10 @@ function renderTodayPurchases() {
         <div class="text-right flex-shrink-0">
           <div class="font-mono font-bold text-sm text-slate-800 dark:text-white">৳${fmt(p.totalCost)}</div>
           <span class="text-[11px] font-semibold ${p.paymentType === 'বাকি' ? 'text-amber-500' : 'text-emerald-500'}">${esc(p.paymentType)}</span>
-          <button onclick="deletePurchaseConfirm('${p.purchaseId}')" class="text-red-400 hover:text-red-600 text-xs mt-1">
-            <i class="fa-solid fa-trash"></i>
-          </button>
+          <div class="flex items-center gap-2 justify-end mt-1">
+            <button onclick="reprintPurchaseReceipt('${p.purchaseId}')" class="text-slate-400 hover:text-brand text-xs"><i class="fa-solid fa-print"></i></button>
+            <button onclick="deletePurchaseConfirm('${p.purchaseId}')" class="text-red-400 hover:text-red-600 text-xs"><i class="fa-solid fa-trash"></i></button>
+          </div>
         </div>
       </div>
     </div>`).join('')
