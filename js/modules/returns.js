@@ -196,6 +196,7 @@ async function submitCustomerReturn(invoiceNo) {
 
     toast(res.message, 's');
     renderRetForm(); renderTodayReturns();
+    openReceiptModal('return', returnDoc); // ✅ ধাপ ৩০
   } catch (err) {
     showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + err.message);
     btn.disabled = false;
@@ -317,6 +318,7 @@ async function submitSupplierReturn(purId) {
 
     toast(res.message, 's');
     renderRetForm(); renderTodayReturns();
+    openReceiptModal('return', returnDoc); // ✅ ধাপ ৩০
   } catch (err) {
     showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + err.message);
     btn.disabled = false;
@@ -343,6 +345,7 @@ function renderTodayReturns() {
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
         <span class="font-mono font-bold text-sm ${r.returnType === 'customer' ? 'text-red-500' : r.reason === 'ধ্বংস' ? 'text-red-600' : 'text-amber-600'}">৳${fmt(r.amount)}</span>
+        <button onclick="reprintReturnReceipt('${r.returnId}')" class="text-slate-400 hover:text-brand text-xs"><i class="fa-solid fa-print"></i></button>
         <button onclick="deleteReturnConfirm('${r.returnId}')" class="text-red-400 hover:text-red-600 text-xs"><i class="fa-solid fa-trash"></i></button>
       </div>
     </div>`).join('') : `<div class="px-4 py-8 text-center text-slate-400 text-sm">এই তারিখে কোনো রিটার্ন নেই</div>`;
