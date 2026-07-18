@@ -20,6 +20,7 @@ const APP_STATE = {
   lowStockLevel: 10,
   historyCutoff: '',
   olderHistoryLoaded: false,
+  capReached: { sales: false, purchases: false, returns: false },
 
   medicines: [],
   customers: [],
