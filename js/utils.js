@@ -71,3 +71,26 @@ function computeInventoryDerivedFields(batches, reorderLevel) {
 
   return { batches: filtered, totalStock, costValue, mrpValue, nearestExpiry, status };
 }
+// ════════════════════════════════════════════════════════════
+// MEDICINE MATCH RESOLVER — ধাপ ২৫: pos.js ও purchase.js দুই জায়গা
+// থেকেই কল হয়। exact match, single-unambiguous-partial-match হলে
+// সরাসরি resolve করে; একাধিক partial match হলে ambiguous রিটার্ন
+// করে — কলার তখন disambiguation UI দেখাবে, silent-select করবে না।
+// ════════════════════════════════════════════════════════════
+function resolveMedicineMatch(query, list, textFn) {
+  const val = String(query || '').trim();
+  if (!val) return { type: 'none' };
+  const valLower = val.toLowerCase();
+
+  // ১. Exact match (পুরো ডিসপ্লে-টেক্সট হুবহু মেলে, কেস-ইনসেনসিটিভ)
+  const exactMatches = list.filter(item => textFn(item).trim().toLowerCase() === valLower);
+  if (exactMatches.length === 1) return { type: 'exact', match: exactMatches[0] };
+  if (exactMatches.length > 1) return { type: 'ambiguous', matches: exactMatches }; // ডুপ্লিকেট-নাম এজ-কেস
+
+  // ২. Partial match
+  const partial = list.filter(item => textFn(item).toLowerCase().includes(valLower));
+  if (partial.length === 1) return { type: 'exact', match: partial[0] }; // একটাই মিলেছে — দ্ব্যর্থহীন
+  if (partial.length > 1) return { type: 'ambiguous', matches: partial };
+
+  return { type: 'none' };
+}
