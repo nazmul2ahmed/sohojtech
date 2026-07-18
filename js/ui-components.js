@@ -175,3 +175,83 @@ function guardReadOnly() {
   }
   return false;
 }
+
+// ════════════════════════════════════════════════════════════
+// MEDICINE DISAMBIGUATION PANEL — ধাপ ২৫: একাধিক partial match
+// হলে ব্যবহারকারীকে বাধ্যতামূলক স্পষ্ট selection করতে হবে।
+// হালকা, custom floating panel — SD প্যাটার্নের ভারী registry ছাড়াই।
+// ════════════════════════════════════════════════════════════
+let _medDisambig = null; // { inputEl, matches, textFn, activeIdx, onSelect, panelEl }
+
+function isMedDisambiguationOpenFor(inputEl) {
+  return !!(_medDisambig && _medDisambig.inputEl === inputEl);
+}
+
+function showMedDisambiguation(inputEl, matches, textFn, onSelect) {
+  closeMedDisambiguation();
+  const rect = inputEl.getBoundingClientRect();
+  const panel = document.createElement('div');
+  panel.id = 'med-disambig-panel';
+  panel.className = 'fixed z-[9994] bg-white dark:bg-slate-700 border border-brand rounded-lg shadow-lg max-h-56 overflow-y-auto';
+  panel.style.left = rect.left + 'px';
+  panel.style.top = (rect.bottom + 4) + 'px';
+  panel.style.width = Math.max(rect.width, 220) + 'px';
+  document.body.appendChild(panel);
+
+  _medDisambig = { inputEl, matches, textFn, activeIdx: 0, onSelect, panelEl: panel };
+  renderMedDisambigPanel();
+
+  // mousedown (click না) — যাতে input-এর blur হওয়ার আগেই সিলেকশন ধরা যায়
+  panel.addEventListener('mousedown', (e) => {
+    const opt = e.target.closest('.med-dis-opt');
+    if (!opt) return;
+    e.preventDefault();
+    confirmMedDisambiguationChoice(parseInt(opt.dataset.idx, 10));
+  });
+
+  document.addEventListener('mousedown', _medDisambigOutsideHandler, true);
+}
+
+function _medDisambigOutsideHandler(e) {
+  if (!_medDisambig) return;
+  if (_medDisambig.panelEl.contains(e.target) || e.target === _medDisambig.inputEl) return;
+  closeMedDisambiguation();
+}
+
+function renderMedDisambigPanel() {
+  if (!_medDisambig) return;
+  const { matches, textFn, activeIdx, panelEl } = _medDisambig;
+  panelEl.innerHTML = matches.map((m, i) => `
+    <div class="med-dis-opt px-3 py-2 text-sm cursor-pointer border-b border-slate-100 dark:border-slate-600/50 last:border-0 ${i === activeIdx ? 'bg-brand/10 text-brand font-semibold' : 'text-slate-700 dark:text-slate-200'}" data-idx="${i}">
+      ${esc(textFn(m))}
+    </div>`).join('');
+}
+
+// keydown হ্যান্ডলিং — pos.js/purchase.js-এর কীডাউন হ্যান্ডলারের শুরুতে কল হবে।
+// true রিটার্ন মানে এই কীপ্রেস প্যানেল সামলে নিয়েছে, কলার আর কিছু করবে না।
+function medDisambiguationHandleKey(e) {
+  if (!_medDisambig) return false;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _medDisambig.activeIdx = Math.min(_medDisambig.activeIdx + 1, _medDisambig.matches.length - 1); renderMedDisambigPanel(); return true; }
+  if (e.key === 'ArrowUp') { e.preventDefault(); _medDisambig.activeIdx = Math.max(_medDisambig.activeIdx - 1, 0); renderMedDisambigPanel(); return true; }
+  if (e.key === 'Enter') { e.preventDefault(); confirmMedDisambiguationChoice(_medDisambig.activeIdx); return true; }
+  if (e.key === 'Escape') { e.preventDefault(); closeMedDisambiguation(); return true; }
+  // অন্য কোনো কী (টাইপিং চালিয়ে যাওয়া) — তালিকা stale হয়ে যাবে, তাই বন্ধ করে দাও;
+  // আবার Enter চাপলে নতুন করে ম্যাচ হবে
+  closeMedDisambiguation();
+  return false;
+}
+
+function confirmMedDisambiguationChoice(idx) {
+  if (!_medDisambig) return;
+  const chosen = _medDisambig.matches[idx];
+  const cb = _medDisambig.onSelect;
+  closeMedDisambiguation();
+  if (cb) cb(chosen);
+}
+
+function closeMedDisambiguation() {
+  if (!_medDisambig) return;
+  _medDisambig.panelEl.remove();
+  document.removeEventListener('mousedown', _medDisambigOutsideHandler, true);
+  _medDisambig = null;
+}
