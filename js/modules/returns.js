@@ -76,7 +76,8 @@ function renderRetForm() {
     box.innerHTML = `
       <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
         <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Invoice নির্বাচন করুন <span class="text-red-500">*</span></label>
-        <div id="sd-ret-invoice" class="mb-4"></div>
+        <div id="sd-ret-invoice" class="mb-2"></div>
+        ${renderRetCapHint('sales')}
         <div id="ret-cust-items"></div>
       </div>`;
     const opts = APP_STATE.sales.map(s => ({ value: s.invoiceNo, label: s.invoiceNo + ' — ' + s.customerName, sub: s.date + ' • ৳' + fmt(s.totalBill) }));
@@ -85,11 +86,44 @@ function renderRetForm() {
     box.innerHTML = `
       <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
         <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Purchase নির্বাচন করুন <span class="text-red-500">*</span></label>
-        <div id="sd-ret-purchase" class="mb-4"></div>
+        <div id="sd-ret-purchase" class="mb-2"></div>
+        ${renderRetCapHint('purchases')}
         <div id="ret-sup-items"></div>
       </div>`;
     const opts = APP_STATE.purchases.map(p => ({ value: p.purchaseId, label: p.purchaseId + ' — ' + p.supplierName, sub: p.date + ' • ৳' + fmt(p.totalCost) }));
     createSD('sd-ret-purchase', opts, onRetPurchaseSelect, '— Purchase খুঁজুন —');
+  }
+}
+
+// ✅ ধাপ ২৭: bootload cap ছোঁয়া থাকলে (capReached.sales/purchases) ইউজারকে
+// জানানো — dropdown-এ কাঙ্ক্ষিত পুরনো ইনভয়েস/purchase না পাওয়া গেলে এটাই
+// কারণ হতে পারে। "লোড করুন" চাপলে loadOlderHistory() রান হয়ে dropdown
+// রি-বিল্ড হবে (নতুন ডেটা include করে)।
+function renderRetCapHint(type) {
+  if (!APP_STATE.capReached || !APP_STATE.capReached[type]) return '';
+  if (APP_STATE.olderHistoryLoaded) return '';
+  return `
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-3 flex items-center justify-between gap-2 flex-wrap">
+      <span><i class="fa-solid fa-triangle-exclamation mr-1"></i>সাম্প্রতিক ৮,০০০টার বেশি পুরনো এন্ট্রি এখনো তালিকায় নেই — কাঙ্ক্ষিত এন্ট্রি না পেলে নিচের বাটনে চাপুন।</span>
+      <button id="ret-load-older-btn" onclick="loadOlderHistoryForReturns()" class="text-brand font-semibold hover:underline whitespace-nowrap"><i class="fa-solid fa-clock-rotate-left mr-1"></i>পুরনো হিস্টোরি লোড করুন</button>
+    </div>`;
+}
+
+// ✅ analytics.js-এর loadOlderHistory() reuse করে, কিন্তু সফল হলে Returns
+// ফর্মও রি-রেন্ডার করে (dropdown নতুন ডেটা দিয়ে রিফ্রেশ হবে)
+async function loadOlderHistoryForReturns() {
+  const btn = document.getElementById('ret-load-older-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> লোড হচ্ছে...'; }
+  try {
+    const res = await apiGetOlderHistory();
+    if (!res.success) { toast('পুরনো হিস্টোরি লোড ব্যর্থ: ' + res.message, 'w'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i>পুরনো হিস্টোরি লোড করুন'; } return; }
+    mergeOlderHistoryIntoState(res);
+    APP_STATE.olderHistoryLoaded = true;
+    toast('পুরনো হিস্টোরি লোড হয়েছে।', 's');
+    renderRetForm();
+  } catch (err) {
+    showFatalError('পুরনো হিস্টোরি লোডে সমস্যা:\n' + err.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i>পুরনো হিস্টোরি লোড করুন'; }
   }
 }
 
