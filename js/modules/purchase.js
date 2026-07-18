@@ -157,6 +157,7 @@ function addPurchaseItem() {
 
 function removePurchaseItem(i) {
   if (APP_STATE.purItems.length <= 1) { toast('কমপক্ষে একটি সারি থাকতে হবে।', 'w'); return; }
+  closeMedDisambiguation();
   APP_STATE.purItems.splice(i, 1);
   renderPurItems();
   calcPurTotal();
@@ -224,17 +225,32 @@ function buildPurMedDisplayText(item) {
   return `${item.brand} ${item.doseForm || ''} ${item.strength || ''}`.trim();
 }
 
-function matchMedicineFromPurInput(i) {
-  const val = (document.getElementById(`pur-med-input-${i}`)?.value || '').trim();
-  if (!val) return null;
-  return APP_STATE.medicines.find(m => `${m.brand} ${m.doseForm || ''} ${m.strength || ''}`.trim() === val)
-    || APP_STATE.medicines.find(m => (m.brand + ' ' + (m.doseForm || '') + ' ' + (m.strength || '')).toLowerCase().includes(val.toLowerCase()))
-    || null;
+function resolvePurMedicineInput(i, opts = {}) {
+  const inputEl = document.getElementById(`pur-med-input-${i}`);
+  if (!inputEl) return;
+  const val = inputEl.value;
+  const textFn = (m) => `${m.brand} ${m.doseForm || ''} ${m.strength || ''}`.trim();
+  const result = resolveMedicineMatch(val, APP_STATE.medicines, textFn);
+  if (result.type === 'exact') {
+    closeMedDisambiguation();
+    applyMedicineToPurItem(i, result.match);
+    if (opts.onResolved) opts.onResolved(result.match);
+    return;
+  }
+  if (result.type === 'ambiguous') {
+    showMedDisambiguation(inputEl, result.matches, textFn, (chosen) => {
+      inputEl.value = textFn(chosen);
+      applyMedicineToPurItem(i, chosen);
+      if (opts.onResolved) opts.onResolved(chosen);
+    });
+    return;
+  }
+  applyMedicineToPurItem(i, null);
+  if (opts.notFoundToast && val.trim()) toast('ওষুধ খুঁজে পাওয়া যায়নি।', 'w');
 }
 
 function onPurMedicineChange(i) {
-  const med = matchMedicineFromPurInput(i);
-  applyMedicineToPurItem(i, med);
+  resolvePurMedicineInput(i);
 }
 
 function applyMedicineToPurItem(i, med) {
@@ -278,13 +294,17 @@ function updatePurLineTotal(i) {
 // ⌨️ KEYBOARD FLOW
 // ────────────────────────────────────────────────────────────
 function onPurMedicineKeydown(e, i) {
+  const inputEl = document.getElementById(`pur-med-input-${i}`);
+  if (isMedDisambiguationOpenFor(inputEl) && medDisambiguationHandleKey(e)) return;
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  const med = matchMedicineFromPurInput(i);
-  if (!med) { toast('ওষুধ খুঁজে পাওয়া যায়নি।', 'w'); return; }
-  applyMedicineToPurItem(i, med);
-  document.getElementById(`pur-qty-${i}`)?.focus();
-  document.getElementById(`pur-qty-${i}`)?.select();
+  resolvePurMedicineInput(i, {
+    notFoundToast: true,
+    onResolved: () => {
+      document.getElementById(`pur-qty-${i}`)?.focus();
+      document.getElementById(`pur-qty-${i}`)?.select();
+    },
+  });
 }
 
 function onPurFieldKeydown(e, i) {
@@ -415,6 +435,7 @@ function showPurError(msg) {
 }
 
 function resetPurchase() {
+  closeMedDisambiguation();
   APP_STATE.purDate = null; APP_STATE.purSupplierId = null; APP_STATE.purPayType = 'নগদ';
   APP_STATE.purItems = [];
   sdClear('sd-pur-supplier');
