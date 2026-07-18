@@ -3,6 +3,7 @@
 // ════════════════════════════════════════════════════════════
 // DASHBOARD MODULE — P&L (Accrual) + Cash Flow + Receivables + Returns Effect
 // ✅ Step 10 আপডেট: supplierPayments এখন Cash Flow-এ যুক্ত (cash-out)
+// ✅ Step 29 আপডেট: Dashboard → Analytics রিপোর্ট নেভিগেশন কার্ড যুক্ত
 // ════════════════════════════════════════════════════════════
 
 function computeDashboardMetrics(state) {
@@ -99,6 +100,24 @@ function renderDashboardModule() {
       ${kpiCard('নিট মুনাফা (Net Profit)', (m.netProfit >= 0 ? '৳' : '−৳') + fmtK(Math.abs(m.netProfit)), 'Revenue − COGS − Expense − Write-off', 'fa-chart-line', m.netProfit >= 0 ? 'green' : 'red')}
       ${kpiCard('আজ নগদ আদায় (Cash In)', '৳' + fmtK(m.cashIn), 'বিক্রয় নগদ + বাকি আদায়', 'fa-hand-holding-dollar', 'green')}
       ${kpiCard('আজ বাকি আদায়', '৳' + fmtK(m.dueCollectedToday), m.paymentCount + ' টি পেমেন্ট', 'fa-money-bill-transfer', 'orange')}
+    </div>
+
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-5">
+      <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2">
+        <i class="fa-solid fa-chart-pie text-brand"></i> রিপোর্ট
+      </h5>
+      <p class="text-[11px] text-slate-400 mb-3">নির্দিষ্ট মেয়াদের P&L সারসংক্ষেপ দেখতে Analytics-এ যান — cap-এর বাইরের পুরনো ডেটা থাকলে স্বয়ংক্রিয়ভাবে লোড হবে</p>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="goToReportPeriod('month')" class="px-4 py-2 text-sm font-semibold bg-brand hover:bg-blue-700 text-white rounded-lg">
+          <i class="fa-solid fa-calendar-day mr-1"></i> এই মাসের রিপোর্ট
+        </button>
+        <button onclick="goToReportPeriod('year')" class="px-4 py-2 text-sm font-semibold bg-brand hover:bg-blue-700 text-white rounded-lg">
+          <i class="fa-solid fa-calendar-days mr-1"></i> এই বছরের রিপোর্ট
+        </button>
+        <button onclick="goToReportPeriod('custom')" class="px-4 py-2 text-sm font-semibold border border-brand text-brand rounded-lg">
+          <i class="fa-solid fa-sliders mr-1"></i> কাস্টম মেয়াদ নির্বাচন
+        </button>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
@@ -230,4 +249,42 @@ function plRow(label, val, colorClass, bold) {
 
 function emptyRow(msg) {
   return `<div class="px-5 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-circle-check text-2xl opacity-30 mb-2 block"></i>${esc(msg)}</div>`;
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ২৯: Dashboard → Analytics ইন্টার-মডিউল নেভিগেশন + auto-fetch
+// ────────────────────────────────────────────────────────────
+function getCurrentMonthRange() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth(); // 0-indexed
+  const mm = String(month + 1).padStart(2, '0');
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return {
+    fromDate: `${year}-${mm}-01`,
+    toDate: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+function goToReportPeriod(type) {
+  if (type === 'custom') {
+    // ইউজার নিজে Analytics ট্যাবে fiscal year/month বেছে নেবেন — prefill/fetch নেই
+    goTab('analytics');
+    return;
+  }
+  let range;
+  if (type === 'month') {
+    range = getCurrentMonthRange();
+  } else if (type === 'year') {
+    // ✅ analytics.js-এর বিদ্যমান fiscal-year হেল্পার reuse করা হচ্ছে
+    const currentFYStartYear = getFiscalYearOptions(1)[0].value;
+    range = getFiscalPeriodRange(currentFYStartYear, null);
+  } else {
+    return;
+  }
+  APP_STATE.anaFrom = range.fromDate;
+  APP_STATE.anaTo = range.toDate;
+  goTab('analytics'); // renderAnalyticsModule() এই prefilled তারিখ দিয়েই রেন্ডার করবে
+  // ব্যাকগ্রাউন্ডে auto-fetch — cap/cutoff-এর বাইরে পড়লে চুপচাপ ডেটা এনে merge করবে
+  ensurePeriodDataLoaded(range.fromDate, range.toDate);
 }
