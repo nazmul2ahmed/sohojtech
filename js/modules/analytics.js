@@ -7,6 +7,9 @@ function renderAnalyticsModule() {
   APP_STATE.anaFrom = APP_STATE.anaFrom || addDaysStr(today, -29);
   APP_STATE.anaTo = APP_STATE.anaTo || today;
 
+  // ✅ ধাপ ২৭: তিনটার যেকোনো একটাতে cap ছোঁয়া থাকলে সাধারণ নোট দেখাবে
+  const anyCapReached = APP_STATE.capReached && (APP_STATE.capReached.sales || APP_STATE.capReached.purchases || APP_STATE.capReached.returns);
+
   c.innerHTML = `
   <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
     <div class="flex items-center gap-2"><label class="text-xs font-semibold text-slate-500">থেকে</label>
@@ -24,6 +27,10 @@ function renderAnalyticsModule() {
            </button>`}
     </div>
   </div>
+  ${anyCapReached && !APP_STATE.olderHistoryLoaded ? `
+  <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-4">
+    <i class="fa-solid fa-circle-info mr-1"></i> বুট-টাইমে সাম্প্রতিক ৮,০০০টা এন্ট্রি পর্যন্ত লোড হয়েছে (পারফরম্যান্সের জন্য) — এই মেয়াদের কিছু পুরনো তথ্য এখনো এই চার্টে/সারসংক্ষেপে অন্তর্ভুক্ত নাও থাকতে পারে। সম্পূর্ণ ছবি পেতে ওপরের "১২ মাসের আগের হিস্টোরি লোড করুন" বাটন চাপুন।
+  </div>` : ''}
   <div id="ana-body"></div>
 `;
   renderAnaBody();
