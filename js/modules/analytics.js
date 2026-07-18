@@ -296,3 +296,35 @@ function mergeOlderHistoryIntoState(data) {
   APP_STATE.payments = mergeArr(APP_STATE.payments, data.payments, 'paymentId');
   APP_STATE.supplierPayments = mergeArr(APP_STATE.supplierPayments, data.supplierPayments, 'paymentId');
 }
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ২৯: নির্দিষ্ট date-range-এর ডেটা APP_STATE-এ সম্পূর্ণ আছে কিনা
+// যাচাই করে — bootload cap (ধাপ ২৭) বা ১২-মাস cutoff-এর কারণে অসম্পূর্ণ
+// হলে ব্যাকগ্রাউন্ডে apiGetHistoryByPeriod() কল করে auto-fetch করে।
+// dashboard.js-এর "এই মাসের/এই বছরের রিপোর্ট" বাটন এটা কল করে।
+// ────────────────────────────────────────────────────────────
+async function ensurePeriodDataLoaded(fromDate, toDate) {
+  if (APP_STATE.olderHistoryLoaded) return false; // ইতিমধ্যে সব ডেটা লোড হয়ে গেছে
+
+  const outsideBootWindow = fromDate < (APP_STATE.historyCutoff || '');
+  const capMayHideData = APP_STATE.capReached && (
+    APP_STATE.capReached.sales || APP_STATE.capReached.purchases || APP_STATE.capReached.returns
+  );
+
+  if (!outsideBootWindow && !capMayHideData) return false; // নিশ্চিতভাবে সম্পূর্ণ ডেটা ইতিমধ্যে আছে
+
+  try {
+    const res = await apiGetHistoryByPeriod(fromDate, toDate);
+    if (!res.success) {
+      toast('এই মেয়াদের সম্পূর্ণ ডেটা ব্যাকগ্রাউন্ডে লোড করতে সমস্যা হয়েছে: ' + res.message, 'w');
+      return false;
+    }
+    mergeOlderHistoryIntoState(res);
+    toast('এই মেয়াদের সম্পূর্ণ ডেটা লোড হয়েছে।', 's');
+    if (APP_STATE.currentTab === 'analytics') renderAnaBody();
+    return true;
+  } catch (err) {
+    showFatalError('মেয়াদের ডেটা অটো-লোডে সমস্যা:\n' + err.message);
+    return false;
+  }
+}
