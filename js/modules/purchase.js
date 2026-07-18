@@ -459,7 +459,10 @@ function renderTodayPurchases() {
   const filterDate = APP_STATE.purListDate || todayStr();
   const listPur = APP_STATE.purchases.filter(p => p.date === filterDate).slice().reverse();
 
-  container.innerHTML = listPur.length ? listPur.map(p => `
+  // ✅ ধাপ ২৭
+  const capHint = capHintHTML('purchases', 'pur-load-older-btn', 'renderTodayPurchases', 'সাম্প্রতিক ৮,০০০টার বেশি ক্রয় থাকলে পুরনো তারিখের এন্ট্রি এখনো নাও দেখাতে পারে।');
+
+  container.innerHTML = capHint + (listPur.length ? listPur.map(p => `
     <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50">
       <div class="flex justify-between items-start">
         <div class="min-w-0">
@@ -476,7 +479,7 @@ function renderTodayPurchases() {
         </div>
       </div>
     </div>`).join('')
-    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-truck-field text-2xl opacity-30 mb-2 block"></i>এই তারিখে কোনো ক্রয় নেই</div>`;
+    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-truck-field text-2xl opacity-30 mb-2 block"></i>এই তারিখে কোনো ক্রয় নেই</div>`);
 }
 
 // ────────────────────────────────────────────────────────────
