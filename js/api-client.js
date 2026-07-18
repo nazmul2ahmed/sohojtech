@@ -1000,6 +1000,38 @@ async function apiGetOlderHistory() {
     return { success: false, message: err.message };
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ২৮: নির্দিষ্ট date-range (ফিসক্যাল ইয়ার/মাস) অনুযায়ী
+// টার্গেটেড হিস্টোরি ফেচ — apiGetOlderHistory()-এর মতো "সব পুরনো
+// ডেটা" না, শুধু ইউজার-নির্বাচিত একটা নির্দিষ্ট মেয়াদ।
+// date ফিল্ডে দুটো range filter (>=, <=) + orderBy('date') — একই
+// ফিল্ডে হওয়ায় composite index লাগে না (single-field index যথেষ্ট)।
+// ────────────────────────────────────────────────────────────
+async function apiGetHistoryByPeriod(fromDate, toDate) {
+  try {
+    const [saleSnap, purSnap, retSnap, expSnap, paySnap, supPaySnap] = await Promise.all([
+      cget2(userCol('sales').where('date', '>=', fromDate).where('date', '<=', toDate).orderBy('date', 'asc')),
+      cget2(userCol('purchases').where('date', '>=', fromDate).where('date', '<=', toDate).orderBy('date', 'asc')),
+      cget2(userCol('returns').where('date', '>=', fromDate).where('date', '<=', toDate).orderBy('date', 'asc')),
+      cget2(userCol('expenses').where('date', '>=', fromDate).where('date', '<=', toDate)),
+      cget2(userCol('payments').where('date', '>=', fromDate).where('date', '<=', toDate)),
+      cget2(userCol('supplierPayments').where('date', '>=', fromDate).where('date', '<=', toDate)),
+    ]);
+    return {
+      success: true,
+      sales: saleSnap.docs.map(d => d.data()),
+      purchases: purSnap.docs.map(d => d.data()),
+      returns: retSnap.docs.map(d => d.data()),
+      expenses: expSnap.docs.map(d => d.data()),
+      payments: paySnap.docs.map(d => d.data()),
+      supplierPayments: supPaySnap.docs.map(d => d.data()),
+    };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
 // ── FULL RESET — সব subcollection মুছে ফেলে, profile/subscription অক্ষুণ্ণ থাকে ──
 async function apiResetAllData() {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
