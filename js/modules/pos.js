@@ -211,17 +211,6 @@ function buildMedDisplayText(m) {
   return `${m.brand} ${m.doseForm || ''} ${m.strength || ''} [স্টক:${m.totalStock}]`.trim();
 }
 
-function matchMedicineFromInput(i) {
-  const val = (document.getElementById(`pos-med-input-${i}`)?.value || '').trim();
-  if (!val) return null;
-  let match = APP_STATE.inventory.find(m => buildMedDisplayText(m) === val && m.totalStock > 0);
-  if (!match) {
-    const lc = val.toLowerCase();
-    match = APP_STATE.inventory.find(m => m.totalStock > 0 &&
-      (m.brand + ' ' + (m.doseForm || '') + ' ' + (m.strength || '')).toLowerCase().includes(lc));
-  }
-  return match || null;
-}
 
 // ────────────────────────────────────────────────────────────
 // ✅ MEDICINE RESOLUTION (with disambiguation support)
@@ -482,7 +471,11 @@ function renderTodayPOSSales() {
   const filterDate = APP_STATE.posListDate || todayStr();
   const listSales = APP_STATE.sales.filter(s => s.date === filterDate).slice().reverse();
 
-  container.innerHTML = listSales.length ? listSales.map(s => `
+  // ✅ ধাপ ২৭: ইউজার পুরনো তারিখ সিলেক্ট করলে সেটা cap-এর বাইরে পড়ে
+  // থাকতে পারে — bootload cap ছোঁয়া থাকলে এখানে হিন্ট দেখানো হচ্ছে
+  const capHint = capHintHTML('sales', 'pos-load-older-btn', 'renderTodayPOSSales', 'সাম্প্রতিক ৮,০০০টার বেশি বিক্রয় থাকলে পুরনো তারিখের এন্ট্রি এখনো নাও দেখাতে পারে।');
+
+  container.innerHTML = capHint + (listSales.length ? listSales.map(s => `
     <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50">
       <div class="flex justify-between items-start">
         <div class="min-w-0">
@@ -496,7 +489,7 @@ function renderTodayPOSSales() {
         </div>
       </div>
     </div>`).join('')
-    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-receipt text-2xl opacity-30 mb-2 block"></i>এই তারিখে কোনো বিক্রয় নেই</div>`;
+    : `<div class="px-4 py-8 text-center text-slate-400 text-sm"><i class="fa-solid fa-receipt text-2xl opacity-30 mb-2 block"></i>এই তারিখে কোনো বিক্রয় নেই</div>`);
 }
 
 function hideEl(id) { document.getElementById(id)?.classList.add('hidden'); }
