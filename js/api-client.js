@@ -439,8 +439,10 @@ async function apiDeleteSale(sale) {
   } catch (err) { return { success: false, message: err.message }; }
 }
 
+
 // ────────────────────────────────────────────────────────────
-// PURCHASE
+// ────────────────────────────────────────────────────────────
+// PURCHASE — apiSubmitPurchase (✅ computeInventoryDerivedFields ব্যবহার করছে)
 // ────────────────────────────────────────────────────────────
 async function apiSubmitPurchase(purchase, opts = {}) {
   const isRetry = !!opts.isRetry;
@@ -457,8 +459,6 @@ async function apiSubmitPurchase(purchase, opts = {}) {
 
     await withTimeout(fbDb.runTransaction(async (tx) => {
       // ✅ সব read আগে
-      // ✅ ফিক্স: purRef read — একই কারণ apiSubmitSale-এর মতো, ডাবল
-      // স্টক/পাওনা এড়াতে
       const existingPurDoc = await tx.get(purRef);
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const supDoc = await tx.get(supRef);
@@ -473,10 +473,22 @@ async function apiSubmitPurchase(purchase, opts = {}) {
         const newBatch = { batchId: 'BAT-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000), expiry: item.expiryDate || '', stock: item.qty, cost: item.purchasePrice, mrp: item.mrp, sell: item.sellPrice || 0 };
         item.batchId = newBatch.batchId; // delete-এর সময় সঠিক ব্যাচ খুঁজতে
         const existing = invDoc.exists ? invDoc.data() : null;
-        const batches = [...(existing?.batches || []), newBatch].sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
-        const totalStock = batches.reduce((a, b) => a + b.stock, 0);
+        const rawBatches = [...(existing?.batches || []), newBatch];
         const reorderLevel = item.reorderLevel || 10;
-        const fields = { medId: item.medId, brand: item.brand, doseForm: item.doseForm || '', strength: item.strength || '', batches, totalStock, costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)), mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)), nearestExpiry: batches[0]?.expiry || '', sellPrice: item.sellPrice > 0 ? item.sellPrice : (existing?.sellPrice || 0), status: totalStock === 0 ? 'out' : totalStock <= reorderLevel ? 'low' : 'ok' };
+
+        // ✅ ফিক্স (ধাপ ২৩, রিফ্যাক্টর): shared হেল্পার — status/nearestExpiry সহ সব ফিল্ড
+        const derived = computeInventoryDerivedFields(rawBatches, reorderLevel);
+
+        const fields = {
+          medId: item.medId, brand: item.brand, doseForm: item.doseForm || '', strength: item.strength || '',
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
+          sellPrice: item.sellPrice > 0 ? item.sellPrice : (existing?.sellPrice || 0),
+          status: derived.status,
+        };
         return { ref: invRefs[idx], fields, exists: invDoc.exists };
       });
 
@@ -758,6 +770,9 @@ async function apiSaveSettings(data) {
   catch (err) { return { success: false, message: err.message }; }
 }
 
+// ────────────────────────────────────────────────────────────
+// OPENING BALANCE — apiSubmitOpeningEntry (✅ computeInventoryDerivedFields ব্যবহার করছে)
+// ────────────────────────────────────────────────────────────
 async function apiSubmitOpeningEntry(entry) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
@@ -777,17 +792,26 @@ async function apiSubmitOpeningEntry(entry) {
       if (invRef) {
         const existing = invDoc.exists ? invDoc.data() : null;
         const newBatch = { batchId: entry.batchId, expiry: entry.expiryDate || '', stock: entry.qty, cost: entry.costPrice, mrp: entry.mrp, sell: entry.sellPrice };
-        const batches = [...(existing?.batches || []), newBatch];
+        const rawBatches = [...(existing?.batches || []), newBatch];
+
+        const med = APP_STATE.medicines.find(m => m.id === entry.medicineId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+
+        // ✅ ফিক্স (ধাপ ২৩, রিফ্যাক্টর): shared হেল্পার — আগে nearestExpiry/status
+        // এখানে existing ভ্যালু বা হার্ডকোড 'ok' থেকে যেত, নতুন ব্যাচ যোগ হওয়ার
+        // পরও রিক্যালকুলেট হতো না। এখন সঠিকভাবে recalculate হচ্ছে।
+        const derived = computeInventoryDerivedFields(rawBatches, reorderLevel);
+
         invFields = {
           medId: entry.medicineId, brand: entry.brand || existing?.brand || '',
           doseForm: existing?.doseForm || '', strength: existing?.strength || '',
-          batches,
-          totalStock: batches.reduce((a, b) => a + b.stock, 0),
-          costValue: round2(batches.reduce((a, b) => a + b.cost * b.stock, 0)),
-          mrpValue: round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0)),
-          nearestExpiry: existing?.nearestExpiry || entry.expiryDate || '',
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
           sellPrice: entry.sellPrice > 0 ? entry.sellPrice : (existing?.sellPrice || 0),
-          status: existing?.status || 'ok',
+          status: derived.status,
         };
         invExists = invDoc.exists;
       }
@@ -1023,6 +1047,9 @@ async function apiBulkUploadGlobalMedicines(rows, onProgress) {
 // INVENTORY BATCH EDIT — ✅ ধাপ ১৩: runTransaction() দিয়ে read-then-write,
 // আগে এই API-ই ছিল না, শুধু local APP_STATE বদলাত।
 // ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
+// INVENTORY BATCH EDIT — apiUpdateBatch (✅ computeInventoryDerivedFields ব্যবহার করছে)
+// ────────────────────────────────────────────────────────────
 async function apiUpdateBatch(medId, batchId, fields) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
@@ -1035,26 +1062,27 @@ async function apiUpdateBatch(medId, batchId, fields) {
       const inv = invDoc.data();
 
       let found = false;
-      let batches = (inv.batches || []).map(b => {
+      const rawBatches = (inv.batches || []).map(b => {
         if (b.batchId !== batchId) return b;
         found = true;
         return { ...b, ...fields };
       });
       if (!found) throw new Error('ব্যাচ খুঁজে পাওয়া যায়নি — সম্ভবত অন্য কোথাও থেকে ইতিমধ্যে মুছে ফেলা হয়েছে।');
 
-      batches = batches.filter(b => b.stock > 0);
-      batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
-
-      const totalStock = batches.reduce((a, b) => a + b.stock, 0);
-      const costValue = round2(batches.reduce((a, b) => a + b.cost * b.stock, 0));
-      const mrpValue = round2(batches.reduce((a, b) => a + b.mrp * b.stock, 0));
-      const nearestExpiry = batches[0]?.expiry || '';
-
       const med = APP_STATE.medicines.find(m => m.id === medId);
       const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
-      const status = totalStock === 0 ? 'out' : totalStock <= reorderLevel ? 'low' : 'ok';
 
-      const updateFields = { batches, totalStock, costValue, mrpValue, nearestExpiry, status };
+      // ✅ ফিক্স (ধাপ ২৩, রিফ্যাক্টর): shared হেল্পার ব্যবহার
+      const derived = computeInventoryDerivedFields(rawBatches, reorderLevel);
+
+      const updateFields = {
+        batches: derived.batches,
+        totalStock: derived.totalStock,
+        costValue: derived.costValue,
+        mrpValue: derived.mrpValue,
+        nearestExpiry: derived.nearestExpiry,
+        status: derived.status,
+      };
       if (fields.sell > 0) updateFields.sellPrice = fields.sell; // ✅ purchase.js/opening.js-এর প্যাটার্নের মতো
 
       // ✅ write পরে
