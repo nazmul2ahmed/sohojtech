@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v10'; // ✅ JS/CSS/HTML সবসময় network-first (cache-busting query সহ), শুধু আইকন cache-first — তাই এখন থেকে এটা বাড়ানো জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
+const CACHE_NAME = 'sohojtech-shell-v11'; // ✅ JS/CSS/HTML সবসময় network-first (cache-busting query সহ), শুধু আইকন cache-first — তাই এখন থেকে এটা বাড়ানো জরুরি না, শুধু PRECACHE_URLS/STATIC_ASSET_PATHS লিস্ট বদলালে বাড়ালেই যথেষ্ট
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
@@ -11,7 +11,7 @@ const NETWORK_TIMEOUT_MS = 3000;
 // ══════════════════════════════════════════════════════════
 const PRECACHE_URLS = [
   './', './index.html', './manifest.json', './css/styles.css',
-  './js/config.js', './js/utils.js', './js/state.js', './js/ui-components.js',
+  './js/config.js', './js/utils.js', './js/state.js', './js/ui-components.js', './js/receipt.js',
   './js/modules/dashboard.js', './js/modules/pos.js', './js/modules/purchase.js',
   './js/modules/returns.js', './js/modules/opening.js', './js/modules/inventory.js',
   './js/modules/medicine.js', './js/modules/customers.js', './js/modules/suppliers.js',
