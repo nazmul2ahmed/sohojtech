@@ -910,18 +910,35 @@ function getCutoffDateStr() {
 }
 
 // ────────────────────────────────────────────────────────────
-// getCompleteData — ✅ ধাপ ২: ৬টা হিস্টোরি কালেকশনে ১২ মাসের cutoff
-// (medicines/customers/suppliers/inventory/openingEntries পুরোটাই লোড হয়,
-//  কারণ এগুলো master data, তারিখ-ভিত্তিক নয়)
+// getCompleteData — ✅ ধাপ ২৭: sales/purchases/returns-এ
+// orderBy('date','desc').limit(HISTORY_CAP) যোগ হলো — cutoff (১২ মাস)
+// অক্ষত থাকছে, কিন্তু ভলিউম-ভারী দোকানে বুট-টাইমে সাম্প্রতিক ৮,০০০
+// ডকুমেন্টের বেশি একসাথে লোড হবে না। expenses/payments/supplierPayments
+// কম-ভলিউম বলে uncapped রাখা হলো (শুধু cutoff filter)।
+//
+// orderBy+limit-এর কারণে ডকুমেন্ট এখন নতুন→পুরনো অর্ডারে আসে, কিন্তু
+// বাকি সব মডিউল (accounts.js, analytics.js, dashboard.js) chronological
+// (পুরনো→নতুন) অর্ডার প্রত্যাশা করে — তাই .reverse() করে ফেরত দেওয়া
+// হচ্ছে, বিদ্যমান বিহেভিয়ার অক্ষুণ্ণ রাখতে।
+//
+// cap ছুঁয়ে গেলে (docs.length === cap) capReached ফ্ল্যাগ true হবে —
+// Returns dropdown ও Analytics ট্যাবে এটা ইউজারকে "পুরনো ডেটা এখনো
+// লোড হয়নি" জানাতে ব্যবহৃত হয় (দেখুন returns.js/analytics.js)।
 // ────────────────────────────────────────────────────────────
 async function apiGetCompleteData() {
   try {
     const cutoff = getCutoffDateStr();
+    const HISTORY_CAP = 8000;
+
+    const salesQuery = userCol('sales').where('date', '>=', cutoff).orderBy('date', 'desc').limit(HISTORY_CAP);
+    const purQuery = userCol('purchases').where('date', '>=', cutoff).orderBy('date', 'desc').limit(HISTORY_CAP);
+    const retQuery = userCol('returns').where('date', '>=', cutoff).orderBy('date', 'desc').limit(HISTORY_CAP);
+
     const [medSnap, custSnap, supSnap, invSnap, saleSnap, purSnap, retSnap, expSnap, paySnap, supPaySnap, obSnap, settingsDoc] = await Promise.all([
       cget2(userCol('medicines')), cget2(userCol('customers')), cget2(userCol('suppliers')), cget2(userCol('inventory')),
-      cget2(userCol('sales').where('date', '>=', cutoff)),
-      cget2(userCol('purchases').where('date', '>=', cutoff)),
-      cget2(userCol('returns').where('date', '>=', cutoff)),
+      cget2(salesQuery),
+      cget2(purQuery),
+      cget2(retQuery),
       cget2(userCol('expenses').where('date', '>=', cutoff)),
       cget2(userCol('payments').where('date', '>=', cutoff)),
       cget2(userCol('supplierPayments').where('date', '>=', cutoff)),
@@ -929,20 +946,33 @@ async function apiGetCompleteData() {
       cgetDoc(userCol('config').doc('settings')),
     ]);
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
+
+    // ✅ orderBy('date','desc') দিয়ে আনা হয়েছে বলে chronological অর্ডারে ফেরাতে reverse()
+    const sales = saleSnap.docs.map(d => d.data()).reverse();
+    const purchases = purSnap.docs.map(d => d.data()).reverse();
+    const returns = retSnap.docs.map(d => d.data()).reverse();
+
+    const capReached = {
+      sales: saleSnap.docs.length >= HISTORY_CAP,
+      purchases: purSnap.docs.length >= HISTORY_CAP,
+      returns: retSnap.docs.length >= HISTORY_CAP,
+    };
+
     return {
       success: true,
       medicines: medSnap.docs.map(d => d.data()), customers: custSnap.docs.map(d => d.data()),
       suppliers: supSnap.docs.map(d => d.data()), inventory: invSnap.docs.map(d => d.data()),
-      sales: saleSnap.docs.map(d => d.data()), purchases: purSnap.docs.map(d => d.data()),
-      returns: retSnap.docs.map(d => d.data()), expenses: expSnap.docs.map(d => d.data()),
+      sales, purchases, returns,
+      expenses: expSnap.docs.map(d => d.data()),
       payments: paySnap.docs.map(d => d.data()), supplierPayments: supPaySnap.docs.map(d => d.data()),
       openingEntries: obSnap.docs.map(d => d.data()),
       pharmacyName: settings.pharmacyName || 'আমার ফার্মেসি', ownerName: settings.ownerName || '',
       phone: settings.phone || '', address: settings.address || '', lowStockLevel: settings.lowStockLevel || 10,
       historyCutoff: cutoff,
+      capReached,
     };
   } catch (err) {
-    return { success: false, message: err.message, medicines: [], customers: [], suppliers: [], inventory: [], sales: [], purchases: [], returns: [], expenses: [], payments: [], supplierPayments: [], openingEntries: [] };
+    return { success: false, message: err.message, medicines: [], customers: [], suppliers: [], inventory: [], sales: [], purchases: [], returns: [], expenses: [], payments: [], supplierPayments: [], openingEntries: [], capReached: { sales: false, purchases: false, returns: false } };
   }
 }
 
