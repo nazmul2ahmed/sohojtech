@@ -15,6 +15,9 @@ function genInvoiceNo() {
 //    সফল হলেই APP_STATE-এ optimistic আপডেট হয় (আগে উল্টো ছিল)।
 // ✅ Tab-switch persistence: গ্রাহক, তারিখ, নগদ ও আইটেম এখন APP_STATE-এ
 //    ধরে রাখা হয়, tab পাল্টালে হারায় না।
+// ✅ Medicine disambiguation: এখন multiple match হলে resolveMedicineMatch()
+//    দিয়ে ambiguous কেস ধরা হয় এবং showMedDisambiguation() দিয়ে ইউজারকে
+//    নির্দিষ্ট মেডিসিন বেছে নিতে দেওয়া হয়।
 // ════════════════════════════════════════════════════════════
 
 function renderPOSModule() {
@@ -144,6 +147,7 @@ function addPOSItem() {
 
 function removePOSItem(i) {
   if (APP_STATE.posItems.length <= 1) { toast('কমপক্ষে একটি সারি থাকতে হবে।', 'w'); return; }
+  closeMedDisambiguation();
   APP_STATE.posItems.splice(i, 1);
   renderPOSItems();
   calcPOSTotals();
@@ -219,9 +223,36 @@ function matchMedicineFromInput(i) {
   return match || null;
 }
 
+// ────────────────────────────────────────────────────────────
+// ✅ MEDICINE RESOLUTION (with disambiguation support)
+// ────────────────────────────────────────────────────────────
+function resolvePOSMedicineInput(i, opts = {}) {
+  const inputEl = document.getElementById(`pos-med-input-${i}`);
+  if (!inputEl) return;
+  const val = inputEl.value;
+  const stockedMeds = APP_STATE.inventory.filter(m => m.totalStock > 0);
+  const result = resolveMedicineMatch(val, stockedMeds, buildMedDisplayText);
+  if (result.type === 'exact') {
+    closeMedDisambiguation();
+    applyMedicineToItem(i, result.match);
+    if (opts.onResolved) opts.onResolved(result.match);
+    return;
+  }
+  if (result.type === 'ambiguous') {
+    showMedDisambiguation(inputEl, result.matches, buildMedDisplayText, (chosen) => {
+      inputEl.value = buildMedDisplayText(chosen);
+      applyMedicineToItem(i, chosen);
+      if (opts.onResolved) opts.onResolved(chosen);
+    });
+    return;
+  }
+  // none
+  applyMedicineToItem(i, null);
+  if (opts.notFoundToast && val.trim()) toast('ওষুধ খুঁজে পাওয়া যায়নি — নাম চেক করুন।', 'w');
+}
+
 function onPOSMedicineChange(i) {
-  const med = matchMedicineFromInput(i);
-  applyMedicineToItem(i, med);
+  resolvePOSMedicineInput(i);
 }
 
 function applyMedicineToItem(i, med) {
@@ -260,14 +291,18 @@ function updateLineTotal(i) {
 // ⌨️ KEYBOARD FLOW
 // ────────────────────────────────────────────────────────────
 function onPOSMedicineKeydown(e, i) {
+  const inputEl = document.getElementById(`pos-med-input-${i}`);
+  if (isMedDisambiguationOpenFor(inputEl) && medDisambiguationHandleKey(e)) return;
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  const med = matchMedicineFromInput(i);
-  if (!med) { toast('ওষুধ খুঁজে পাওয়া যায়নি — নাম চেক করুন।', 'w'); return; }
-  applyMedicineToItem(i, med);
-  addPOSItem();
-  const newIdx = APP_STATE.posItems.length - 1;
-  setTimeout(() => focusMedicineInput(newIdx), 30);
+  resolvePOSMedicineInput(i, {
+    notFoundToast: true,
+    onResolved: () => {
+      addPOSItem();
+      const newIdx = APP_STATE.posItems.length - 1;
+      setTimeout(() => focusMedicineInput(newIdx), 30);
+    },
+  });
 }
 
 function onPOSFieldKeydown(e, i) {
@@ -398,6 +433,7 @@ function showPOSError(msg) {
 }
 
 function resetPOS() {
+  closeMedDisambiguation();
   APP_STATE.posDate = null; APP_STATE.posCashPaid = null; APP_STATE.posCustomerId = null;
   APP_STATE.posItems = [];
   sdClear('sd-pos-customer');
