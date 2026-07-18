@@ -371,7 +371,7 @@ async function submitPOSSale() {
 
   const customer = APP_STATE.customers.find(c => c.id === custId);
   const custName = custId === 'WALK_IN' ? 'নগদ গ্রাহক' : (customer?.name || custId);
-  const invoiceNo = genInvoiceNo(); // ✅ সংশোধন: কলিশন-প্রতিরোধী ID (আগের বার্তায় ভুলে বাদ পড়েছিল)
+  const invoiceNo = genInvoiceNo();
 
   const sale = {
     invoiceNo, date, customerId: custId, customerName: custName,
@@ -397,6 +397,7 @@ async function submitPOSSale() {
       toast(res.message, 'w');
       resetPOS();
       refreshSyncBadge();
+      openReceiptModal('sale', sale); // ✅ ধাপ ৩০: অফলাইনেও কাউন্টারে ফিজিক্যাল রিসিট লাগে
     } else {
       validItems.forEach(item => deductStockFEFO(item.medId, item.qty));
       if (customer) applyCustomerDueChange(custId, due, cashPaid);
@@ -404,6 +405,7 @@ async function submitPOSSale() {
       toast(res.message, 's');
       resetPOS();
       renderTodayPOSSales();
+      openReceiptModal('sale', sale); // ✅ ধাপ ৩০
     }
     btn.disabled = false;
     btn.innerHTML = idleHTML;
@@ -471,8 +473,6 @@ function renderTodayPOSSales() {
   const filterDate = APP_STATE.posListDate || todayStr();
   const listSales = APP_STATE.sales.filter(s => s.date === filterDate).slice().reverse();
 
-  // ✅ ধাপ ২৭: ইউজার পুরনো তারিখ সিলেক্ট করলে সেটা cap-এর বাইরে পড়ে
-  // থাকতে পারে — bootload cap ছোঁয়া থাকলে এখানে হিন্ট দেখানো হচ্ছে
   const capHint = capHintHTML('sales', 'pos-load-older-btn', 'renderTodayPOSSales', 'সাম্প্রতিক ৮,০০০টার বেশি বিক্রয় থাকলে পুরনো তারিখের এন্ট্রি এখনো নাও দেখাতে পারে।');
 
   container.innerHTML = capHint + (listSales.length ? listSales.map(s => `
@@ -485,7 +485,10 @@ function renderTodayPOSSales() {
         <div class="text-right flex-shrink-0">
           <div class="font-mono font-bold text-sm text-slate-800 dark:text-white">৳${fmt(s.totalBill)}</div>
           ${s.due > 0 ? `<span class="text-[11px] text-red-500 font-semibold">বাকি ৳${fmt(s.due)}</span>` : `<span class="text-[11px] text-emerald-500 font-semibold">পরিশোধিত</span>`}
-          <button onclick="deleteSaleConfirm('${s.invoiceNo}')" class="text-red-400 hover:text-red-600 text-xs mt-1 block ml-auto"><i class="fa-solid fa-trash"></i></button>
+          <div class="flex items-center gap-2 justify-end mt-1">
+            <button onclick="reprintSaleReceipt('${s.invoiceNo}')" class="text-slate-400 hover:text-brand text-xs"><i class="fa-solid fa-print"></i></button>
+            <button onclick="deleteSaleConfirm('${s.invoiceNo}')" class="text-red-400 hover:text-red-600 text-xs"><i class="fa-solid fa-trash"></i></button>
+          </div>
         </div>
       </div>
     </div>`).join('')
