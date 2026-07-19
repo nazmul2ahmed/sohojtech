@@ -441,7 +441,7 @@ function resetPOS() {
 function deductStockFEFO(medId, qty) {
   const inv = APP_STATE.inventory.find(m => m.medId === medId);
   if (!inv) return;
-  inv.batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+  inv.batches.sort((a, b) => compareBatchExpiry(a, b, 'asc')); // ✅ ধাপ ৩১ ফিক্স
   let remaining = qty;
   for (const b of inv.batches) {
     if (remaining <= 0) break;
