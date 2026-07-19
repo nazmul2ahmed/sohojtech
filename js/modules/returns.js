@@ -284,16 +284,21 @@ async function submitSupplierReturn(purId) {
     if (qty <= 0) continue;
     const alreadyOnThisPurchase = returnedQty(purId, item.medId, 'supplier');
     const purchaseCap = item.qty - alreadyOnThisPurchase;
-    const currentStock = APP_STATE.inventory.find(m => m.medId === item.medId)?.totalStock || 0;
+    // ✅ ফিক্স: UI hint-এর মতোই এখন batch-specific stock cap — totalStock না
+    const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
+    const hasBatchTracking = !!item.batchId;
+    const currentStock = hasBatchTracking
+      ? (inv?.batches.find(b => b.batchId === item.batchId)?.stock || 0)
+      : (inv?.totalStock || 0); // legacy fallback অক্ষত
     const allowedMax = Math.max(0, Math.min(purchaseCap, currentStock));
     if (qty > allowedMax) {
       if (currentStock < purchaseCap) {
-        return showRetError(`"${item.brand}" — বর্তমান স্টক মাত্র ${currentStock}টা, এত ফেরত দেওয়া সম্ভব না।`);
+        const label = hasBatchTracking ? 'এই নির্দিষ্ট ব্যাচে বর্তমান স্টক' : 'বর্তমান স্টক';
+        return showRetError(`"${item.brand}" — ${label} মাত্র ${currentStock}টা, এত ফেরত দেওয়া সম্ভব না।`);
       }
       return showRetError(`"${item.brand}" ফেরতযোগ্য সীমা অতিক্রম করেছে।`);
     }
     amount += qty * item.purchasePrice;
-    // ✅ সংশোধন: batchId পাস করা হচ্ছে — precise batch-level destock/restock-এর জন্য
     items.push({ medId: item.medId, name: item.brand, qty, purchasePrice: item.purchasePrice, batchId: item.batchId || null });
   }
   if (!items.length) return showRetError('কমপক্ষে একটি ওষুধের পরিমাণ দিন।');
@@ -319,13 +324,12 @@ async function submitSupplierReturn(purId) {
       return;
     }
 
-    // ✅ সংশোধন: batchId থাকলে precise batch-level destock, নাহলে legacy fallback
     items.forEach(item => {
       if (item.batchId) {
         const res = destockByBatchId(item.medId, item.batchId, item.qty);
-        if (!res.success) console.warn('Local mirror destock সমস্যা:', res.message); // Firestore-এর সাথে সামঞ্জস্য নিশ্চিত হয়ে গেছে ততক্ষণে
+        if (!res.success) console.warn('Local mirror destock সমস্যা:', res.message);
       } else {
-        destockItem(item.medId, item.qty); // legacy fallback
+        destockItem(item.medId, item.qty);
       }
     });
     if (supPayableReduction > 0) applySupplierPayableChange(pur.supplierId, -amount, 0);
@@ -333,7 +337,7 @@ async function submitSupplierReturn(purId) {
 
     toast(res.message, 's');
     renderRetForm(); renderTodayReturns();
-    openReceiptModal('return', returnDoc); // ✅ ধাপ ৩০
+    openReceiptModal('return', returnDoc);
   } catch (err) {
     showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + err.message);
     btn.disabled = false;
