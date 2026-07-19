@@ -73,7 +73,7 @@ function destockItem(medId, qty) {
   const inv = APP_STATE.inventory.find(m => m.medId === medId);
   if (!inv) return;
   let remaining = qty;
-  inv.batches.sort((a, b) => (b.expiry || '0000') > (a.expiry || '0000') ? 1 : -1);
+  inv.batches.sort((a, b) => compareBatchExpiry(a, b, 'desc')); // ✅ ধাপ ৩১ ফিক্স
   for (const b of inv.batches) { if (remaining <= 0) break; const take = Math.min(b.stock, remaining); b.stock -= take; remaining -= take; }
   inv.batches = inv.batches.filter(b => b.stock > 0);
   recalcInventoryRow(inv);
@@ -82,7 +82,7 @@ function recalcInventoryRow(inv) {
   inv.totalStock = inv.batches.reduce((a, b) => a + b.stock, 0);
   inv.costValue = round2(inv.batches.reduce((a, b) => a + b.cost * b.stock, 0));
   inv.mrpValue = round2(inv.batches.reduce((a, b) => a + b.mrp * b.stock, 0));
-  inv.batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+  inv.batches.sort((a, b) => compareBatchExpiry(a, b, 'asc')); // ✅ ধাপ ৩১ ফিক্স
   inv.nearestExpiry = inv.batches[0]?.expiry || '';
   const med = APP_STATE.medicines.find(m => m.id === inv.medId);
   const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
