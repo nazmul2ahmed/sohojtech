@@ -284,7 +284,10 @@ async function submitSupplierReturn(purId) {
     if (qty <= 0) continue;
     const alreadyOnThisPurchase = returnedQty(purId, item.medId, 'supplier');
     const purchaseCap = item.qty - alreadyOnThisPurchase;
-    // ✅ ফিক্স: UI hint-এর মতোই এখন batch-specific stock cap — totalStock না
+    // ✅ ধাপ ২৬ ফিক্স: UI hint-এর মতোই এখন validation-ও batch-specific stock cap
+    // ব্যবহার করছে — আগে এখানে totalStock ছিল, যা UI-তে দেখানো সীমার সাথে
+    // mismatch তৈরি করত (batch stock কম কিন্তু totalStock বেশি হলে ভুল লিমিট
+    // দেখাতো, বা এরর মেসেজ ভুল সংখ্যা বলত)।
     const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
     const hasBatchTracking = !!item.batchId;
     const currentStock = hasBatchTracking
@@ -299,6 +302,7 @@ async function submitSupplierReturn(purId) {
       return showRetError(`"${item.brand}" ফেরতযোগ্য সীমা অতিক্রম করেছে।`);
     }
     amount += qty * item.purchasePrice;
+    // ✅ ধাপ ২৬: batchId এখন item-এর সাথে পাস হচ্ছে — precise destock/restock-এর জন্য
     items.push({ medId: item.medId, name: item.brand, qty, purchasePrice: item.purchasePrice, batchId: item.batchId || null });
   }
   if (!items.length) return showRetError('কমপক্ষে একটি ওষুধের পরিমাণ দিন।');
