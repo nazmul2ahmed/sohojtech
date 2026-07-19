@@ -39,6 +39,28 @@ function parseExpiryDate(exp) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ৩১: ক্যালেন্ডার-সঠিক expiry comparator — parseExpiryDate()
+// ব্যবহার করে প্রকৃত Date তুলনা করে, "MM/YYYY" স্ট্রিং-এর lexicographic
+// (আভিধানিক) তুলনা না। আগে অনেক জায়গায় সরাসরি স্ট্রিং তুলনা হতো
+// (যেমন `a.expiry < b.expiry`), যেটা বছরের বাউন্ডারিতে ভুল অর্ডার
+// দিত — "01/2027" lexicographically "12/2026"-এর আগে পড়ে, যদিও
+// ক্যালেন্ডারে ডিসেম্বর ২০২৬ আগে। এখন থেকে batches sort করার সব
+// জায়গা এই একটাই হেল্পার ব্যবহার করবে।
+//
+// direction: 'asc' (soonest-expiry-first, FEFO deduction/nearestExpiry-এ
+// ব্যবহৃত) বা 'desc' (furthest-expiry-first, সাপ্লায়ার রিটার্ন/রাইট-অফ
+// legacy heuristic-এ ব্যবহৃত)। খালি/অপার্সেবল expiry সবসময় সবার শেষে
+// যাবে — কোনো দিকেই প্রায়োরিটাইজড হবে না।
+// ════════════════════════════════════════════════════════════
+function compareBatchExpiry(a, b, direction = 'asc') {
+  const da = parseExpiryDate(a.expiry), db = parseExpiryDate(b.expiry);
+  if (!da && !db) return 0;
+  if (!da) return 1;
+  if (!db) return -1;
+  return direction === 'asc' ? da - db : db - da;
+}
+
 function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
@@ -59,7 +81,7 @@ function setText(id, text) {
 // ════════════════════════════════════════════════════════════
 function computeInventoryDerivedFields(batches, reorderLevel) {
   const filtered = (batches || []).filter(b => (b.stock || 0) > 0);
-  filtered.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+  filtered.sort((a, b) => compareBatchExpiry(a, b, 'asc')); // ✅ ধাপ ৩১ ফিক্স
 
   const totalStock = filtered.reduce((a, b) => a + b.stock, 0);
   const costValue = round2(filtered.reduce((a, b) => a + (b.cost || 0) * b.stock, 0));
