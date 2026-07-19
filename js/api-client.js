@@ -261,7 +261,7 @@ async function queuePurchaseOffline(purchase) {
 // ────────────────────────────────────────────────────────────
 function computeFEFODeduction(invData, qty) {
   const batches = (invData.batches || []).map(b => ({ ...b }));
-  batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+  batches.sort((a, b) => compareBatchExpiry(a, b, 'asc')); // ✅ ধাপ ৩১ ফিক্স
   let remaining = qty;
   let totalCost = 0;
   const consumed = []; // ✅ কোন batchId থেকে কত ইউনিট + কী cost-এ কাটা হলো — restock/return-এর জন্য দরকার
@@ -644,8 +644,8 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
           if (batches[idx].stock < item.qty) throw new Error(`"${item.name}" — এই ব্যাচে পর্যাপ্ত স্টক নেই (আছে: ${batches[idx].stock})।`);
           batches[idx] = { ...batches[idx], stock: batches[idx].stock - item.qty };
         } else {
-          // legacy fallback — আগের FEFO heuristic অক্ষত
-          batches.sort((a, b) => (b.expiry || '0000') > (a.expiry || '0000') ? 1 : -1);
+          // legacy fallback — furthest-expiry-first heuristic অক্ষত, শুধু sort ✅ ধাপ ৩১ ফিক্স
+          batches.sort((a, b) => compareBatchExpiry(a, b, 'desc'));
           let remaining = item.qty;
           batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; });
         }
