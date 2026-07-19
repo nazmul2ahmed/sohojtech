@@ -631,13 +631,25 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
       const invMap = {};
       uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null, medId: id }; });
 
+      // ✅ ফিক্স: batch-precise deduction — item.batchId থাকলে ঠিক সেই ব্যাচ থেকেই
+      // কাটা হয় (নির্দিষ্ট ব্যাচ না পেলে বা স্টক অপর্যাপ্ত হলে error, partial-write
+      // ঝুঁকি নেই কারণ এই throw সব read-এর পরে কিন্তু সব write-এর আগে ঘটে)।
+      // batchId না থাকলে (পুরনো/legacy রেকর্ড) আগের FEFO heuristic অক্ষত থাকছে।
       returnDoc.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
         let batches = [...(e.data.batches || [])];
-        batches.sort((a, b) => (b.expiry || '0000') > (a.expiry || '0000') ? 1 : -1);
-        let remaining = item.qty;
-        batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; }).filter(b => b.stock > 0);
-        e.data.batches = batches;
+        if (item.batchId) {
+          const idx = batches.findIndex(b => b.batchId === item.batchId);
+          if (idx === -1) throw new Error(`"${item.name}" — নির্দিষ্ট ব্যাচ পাওয়া যায়নি (হয়তো ইতিমধ্যে অন্য কোথাও শেষ হয়ে গেছে)।`);
+          if (batches[idx].stock < item.qty) throw new Error(`"${item.name}" — এই ব্যাচে পর্যাপ্ত স্টক নেই (আছে: ${batches[idx].stock})।`);
+          batches[idx] = { ...batches[idx], stock: batches[idx].stock - item.qty };
+        } else {
+          // legacy fallback — আগের FEFO heuristic অক্ষত
+          batches.sort((a, b) => (b.expiry || '0000') > (a.expiry || '0000') ? 1 : -1);
+          let remaining = item.qty;
+          batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; });
+        }
+        e.data.batches = batches.filter(b => b.stock > 0);
       });
 
       let supFields = null;
@@ -711,9 +723,22 @@ async function apiDeleteReturn(ret) {
       } else {
         ret.items.forEach(item => {
           const e = invMap[item.medId]; if (!e.data) return;
-          const batches = [...(e.data.batches || [])];
-          if (batches.length) batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
-          else batches.push({ batchId: 'BAT-VOID-' + Date.now(), expiry: '', stock: item.qty, cost: item.purchasePrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
+          let batches = [...(e.data.batches || [])];
+          // ✅ ফিক্স: batchId থাকলে ঠিক সেই ব্যাচে precise restock;
+          // না থাকলে (legacy) এক্সপ্লিসিট expiry-sort করে soonest-expiry
+          // ব্যাচেই ফেরত — batches[0]-এর উপর implicit নির্ভরতা বাদ, self-contained
+          if (item.batchId) {
+            const idx = batches.findIndex(b => b.batchId === item.batchId);
+            if (idx !== -1) batches[idx] = { ...batches[idx], stock: batches[idx].stock + item.qty };
+            else batches.push({ batchId: item.batchId, expiry: '', stock: item.qty, cost: item.purchasePrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
+          } else {
+            if (batches.length) {
+              batches.sort((a, b) => (parseExpiryDate(a.expiry) || Infinity) - (parseExpiryDate(b.expiry) || Infinity));
+              batches[0] = { ...batches[0], stock: batches[0].stock + item.qty };
+            } else {
+              batches.push({ batchId: 'BAT-VOID-' + Date.now(), expiry: '', stock: item.qty, cost: item.purchasePrice || 0, mrp: 0, sell: e.data.sellPrice || 0 });
+            }
+          }
           e.data.batches = batches;
         });
       }
