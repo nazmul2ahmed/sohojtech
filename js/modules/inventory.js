@@ -52,6 +52,23 @@ function destockFromConsumed(medId, qty, consumedBatches) {
   }
 }
 
+// ✅ ধাপ ২৬: precise batch-level destock — supplier return-এ ব্যবহৃত।
+// destockItem()-এর FEFO/furthest heuristic থেকে ভিন্ন — নির্দিষ্ট batchId
+// থেকেই কাটে, অন্য কোনো ব্যাচ স্পর্শ করে না। ব্যাচ না পেলে বা স্টক
+// অপর্যাপ্ত হলে স্পষ্ট ব্যর্থতা রিটার্ন করে (silently fallback করে না —
+// patient-safety/compliance ঝুঁকি এড়াতে)।
+function destockByBatchId(medId, batchId, qty) {
+  const inv = APP_STATE.inventory.find(m => m.medId === medId);
+  if (!inv) return { success: false, message: 'ওষুধ ইনভেন্টরিতে পাওয়া যায়নি।' };
+  const batch = inv.batches.find(b => b.batchId === batchId);
+  if (!batch) return { success: false, message: `ব্যাচ (${batchId}) পাওয়া যায়নি — সম্ভবত সম্পূর্ণ বিক্রি হয়ে গেছে।` };
+  if (batch.stock < qty) return { success: false, message: `এই ব্যাচে মাত্র ${batch.stock} ইউনিট আছে — নির্দিষ্ট ব্যাচ থেকে এত রিটার্ন সম্ভব না।` };
+  batch.stock -= qty;
+  inv.batches = inv.batches.filter(b => b.stock > 0);
+  recalcInventoryRow(inv);
+  return { success: true };
+}
+
 function destockItem(medId, qty) {
   const inv = APP_STATE.inventory.find(m => m.medId === medId);
   if (!inv) return;
@@ -308,21 +325,4 @@ function statCard(label, val, icon, color) {
     <div class="text-lg font-extrabold font-mono text-slate-800 dark:text-white">${esc(val)}</div>
     <div class="text-xs text-slate-500">${esc(label)}</div>
   </div>`;
-}
-
-// ✅ ধাপ ২৬: precise batch-level destock — supplier return-এ ব্যবহৃত।
-// destockItem()-এর FEFO heuristic থেকে ভিন্ন — নির্দিষ্ট batchId থেকেই কাটে,
-// অন্য কোনো ব্যাচ স্পর্শ করে না। ব্যাচ না পেলে বা স্টক অপর্যাপ্ত হলে
-// স্পষ্ট ব্যর্থতা রিটার্ন করে (silently fallback করে না — patient-safety/
-// compliance ঝুঁকি এড়াতে)।
-function destockByBatchId(medId, batchId, qty) {
-  const inv = APP_STATE.inventory.find(m => m.medId === medId);
-  if (!inv) return { success: false, message: 'ওষুধ ইনভেন্টরিতে পাওয়া যায়নি।' };
-  const batch = inv.batches.find(b => b.batchId === batchId);
-  if (!batch) return { success: false, message: `ব্যাচ (${batchId}) পাওয়া যায়নি — সম্ভবত সম্পূর্ণ বিক্রি হয়ে গেছে।` };
-  if (batch.stock < qty) return { success: false, message: `এই ব্যাচে মাত্র ${batch.stock} ইউনিট আছে — নির্দিষ্ট ব্যাচ থেকে এত রিটার্ন সম্ভব না।` };
-  batch.stock -= qty;
-  inv.batches = inv.batches.filter(b => b.stock > 0);
-  recalcInventoryRow(inv);
-  return { success: true };
 }
