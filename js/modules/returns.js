@@ -208,7 +208,7 @@ async function submitCustomerReturn(invoiceNo) {
 // SUPPLIER RETURN / EXPIRY WRITE-OFF FORM
 // ✅ ফিক্স: ফেরতযোগ্য সীমা এখন দুটোর মধ্যে ছোটটা —
 //   (ক) এই Purchase-এ মূল ক্রয় থেকে যা বাকি আছে, এবং
-//   (খ) বর্তমান প্রকৃত Inventory স্টক (অন্য উৎস থেকে স্টক বদলে থাকতে পারে)
+//   (খ) নির্দিষ্ট ব্যাচের (batch-specific) বর্তমান স্টক — medicine-wide totalStock না
 // ════════════════════════════════════════════════════════════
 function onRetPurchaseSelect(purId) {
   const box = document.getElementById('ret-sup-items');
@@ -217,11 +217,17 @@ function onRetPurchaseSelect(purId) {
   const rows = pur.items.map((item, i) => {
     const alreadyOnThisPurchase = returnedQty(purId, item.medId, 'supplier');
     const purchaseCap = item.qty - alreadyOnThisPurchase;
-    const currentStock = APP_STATE.inventory.find(m => m.medId === item.medId)?.totalStock || 0;
-    const maxQty = Math.max(0, Math.min(purchaseCap, currentStock));
-    const stockNote = currentStock < purchaseCap
-      ? `<span class="text-amber-600">বর্তমান স্টক ৎ${currentStock}টা (কম) দিয়ে সীমাবদ্ধ</span>`
-      : `ফেরতযোগ্য: ${maxQty}`;
+    const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
+    const hasBatchTracking = !!item.batchId; // পুরনো (ফিক্সের আগের) purchase-এ batchId নাও থাকতে পারে
+    const batchStock = hasBatchTracking
+      ? (inv?.batches.find(b => b.batchId === item.batchId)?.stock || 0)
+      : (inv?.totalStock || 0); // legacy fallback — আগের আচরণ
+    const maxQty = Math.max(0, Math.min(purchaseCap, batchStock));
+    const stockNote = !hasBatchTracking
+      ? `<span class="text-amber-600">পুরনো এন্ট্রি — batch-tracking নেই, আনুমানিক সীমা</span>`
+      : batchStock < purchaseCap
+        ? `<span class="text-amber-600">এই নির্দিষ্ট ব্যাচে বর্তমান স্টক ${batchStock}টা (কম) দিয়ে সীমাবদ্ধ</span>`
+        : `ফেরতযোগ্য: ${maxQty}`;
     return `<div class="flex items-center gap-3 py-2 border-b border-slate-100 dark:border-slate-700/50">
       <div class="flex-1 min-w-0"><div class="text-sm font-semibold">${esc(item.brand)}</div><div class="text-[11px] text-slate-400">ক্রয়: ${item.qty} | ${stockNote}</div></div>
       <input type="number" id="ret-s-qty-${i}" min="0" max="${maxQty}" value="0" oninput="calcRetSupTotal()"
@@ -287,7 +293,8 @@ async function submitSupplierReturn(purId) {
       return showRetError(`"${item.brand}" ফেরতযোগ্য সীমা অতিক্রম করেছে।`);
     }
     amount += qty * item.purchasePrice;
-    items.push({ medId: item.medId, name: item.brand, qty, purchasePrice: item.purchasePrice });
+    // ✅ সংশোধন: batchId পাস করা হচ্ছে — precise batch-level destock/restock-এর জন্য
+    items.push({ medId: item.medId, name: item.brand, qty, purchasePrice: item.purchasePrice, batchId: item.batchId || null });
   }
   if (!items.length) return showRetError('কমপক্ষে একটি ওষুধের পরিমাণ দিন।');
   amount = round2(amount);
@@ -312,7 +319,15 @@ async function submitSupplierReturn(purId) {
       return;
     }
 
-    items.forEach(item => destockItem(item.medId, item.qty));
+    // ✅ সংশোধন: batchId থাকলে precise batch-level destock, নাহলে legacy fallback
+    items.forEach(item => {
+      if (item.batchId) {
+        const res = destockByBatchId(item.medId, item.batchId, item.qty);
+        if (!res.success) console.warn('Local mirror destock সমস্যা:', res.message); // Firestore-এর সাথে সামঞ্জস্য নিশ্চিত হয়ে গেছে ততক্ষণে
+      } else {
+        destockItem(item.medId, item.qty); // legacy fallback
+      }
+    });
     if (supPayableReduction > 0) applySupplierPayableChange(pur.supplierId, -amount, 0);
     APP_STATE.returns.push(returnDoc);
 
@@ -366,7 +381,11 @@ async function deleteReturnConfirm(returnId) {
       ret.items.forEach(item => destockFromConsumed(item.medId, item.qty, item.consumedBatches));
       if (ret.refundMethod === 'বাকি সমন্বয়') applyCustomerDueChange(ret.partyId, ret.amount, 0);
     } else {
-      ret.items.forEach(item => restockItem(item.medId, item.qty, item.purchasePrice));
+      // ✅ সংশোধন: batchId থাকলে precise batch-level restock (consumedBatches শেপে বানিয়ে পাঠানো হচ্ছে)
+      ret.items.forEach(item => {
+        const consumedBatches = item.batchId ? [{ batchId: item.batchId, qty: item.qty, cost: item.purchasePrice }] : null;
+        restockItem(item.medId, item.qty, item.purchasePrice, consumedBatches);
+      });
       if (ret.reason === 'ফেরত' && ret.refundMethod === 'পাওনা সমন্বয়') applySupplierPayableChange(ret.partyId, ret.amount, 0);
     }
     APP_STATE.returns = APP_STATE.returns.filter(r => r.returnId !== returnId);
