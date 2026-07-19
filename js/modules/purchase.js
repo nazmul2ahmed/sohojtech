@@ -417,7 +417,7 @@ function addPurchaseBatch(item, date) {
     batchId, expiry: item.expiryDate || '', stock: item.qty,
     cost: item.purchasePrice, mrp: item.mrp, sell: item.sellPrice || inv.sellPrice,
   });
-  inv.batches.sort((a, b) => (a.expiry || '9999') < (b.expiry || '9999') ? -1 : 1);
+  inv.batches.sort((a, b) => compareBatchExpiry(a, b, 'asc')); // ✅ ধাপ ৩১ ফিক্স
   inv.totalStock = inv.batches.reduce((a, b) => a + b.stock, 0);
   inv.costValue = round2(inv.batches.reduce((a, b) => a + b.cost * b.stock, 0));
   inv.mrpValue = round2(inv.batches.reduce((a, b) => a + b.mrp * b.stock, 0));
