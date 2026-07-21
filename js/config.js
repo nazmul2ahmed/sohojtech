@@ -14,6 +14,7 @@ const APP_CONFIG = {
   },
 
   ADMIN_EMAIL: 'nazmul2ahmed@gmail.com',
+  SUPPORT_PHONE: '+8801346553350', // ✅ সাবস্ক্রিপশন/রিনিউ প্রমো (WhatsApp+Call CTA)-এর জন্য — subscription-promo.js
   TRIAL_DAYS: 15,
 
   features: {
