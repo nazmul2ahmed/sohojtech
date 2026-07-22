@@ -777,17 +777,69 @@ async function apiDeleteReturn(ret) {
 }
 
 // ────────────────────────────────────────────────────────────
+// ✅ ধাপ ৩২.১: CASH BALANCE — persistent running counter হেল্পার
+// users/{uid}/config/balances → { cashBalance, lastUpdated }
+// Firestore rules-এ নতুন কিছু লাগবে না — বিদ্যমান config/{docId} rule
+// (isOwnerUid(uid) && hasAppAccess(uid)) ইতিমধ্যেই কভার করে।
+//
+// ব্যবহারবিধি (ধাপ ১/২৪-এর "সব read আগে, সব write পরে" প্যাটার্ন মেনে):
+//   ১) transaction-এর read-ধাপে: const bal = await readCashBalance(tx);
+//   ২) transaction-এর write-ধাপে: applyCashDelta(tx, bal, delta);
+// দুটো call আলাদা রাখা বাধ্যতামূলক — readCashBalance() এর ভেতরে tx.get()
+// আছে, এটা কোনো tx.set()/tx.delete()-এর পরে কল করলে Firestore
+// "reads must come before writes" এরর দেবে।
+// ────────────────────────────────────────────────────────────
+function balanceRef() {
+  return userCol('config').doc('balances');
+}
+
+async function readCashBalance(tx) {
+  const doc = await tx.get(balanceRef());
+  return doc.exists ? (doc.data().cashBalance || 0) : 0;
+}
+
+function applyCashDelta(tx, currentBalance, delta) {
+  if (!delta) return; // delta === 0 হলে write skip — অপ্রয়োজনীয় write এড়ানো
+  tx.set(balanceRef(), {
+    cashBalance: round2(currentBalance + delta),
+    lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+// ────────────────────────────────────────────────────────────
 // EXPENSE / SETTINGS / OPENING BALANCE
 // ────────────────────────────────────────────────────────────
 async function apiAddExpense(exp) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
-  try { await userCol('expenses').doc(exp.id).set(exp); return { success: true }; }
-  catch (err) { return { success: false, message: err.message }; }
+  try {
+    const expRef = userCol('expenses').doc(exp.id);
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে
+      const currentBalance = await readCashBalance(tx);
+      // ✅ সব write পরে
+      tx.set(expRef, exp);
+      applyCashDelta(tx, currentBalance, -(exp.amount || 0)); // খরচ = cash কমে
+    });
+    return { success: true };
+  } catch (err) { return { success: false, message: err.message }; }
 }
+
 async function apiDeleteExpense(expId) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
-  try { await userCol('expenses').doc(expId).delete(); return { success: true }; }
-  catch (err) { return { success: false, message: err.message }; }
+  try {
+    const expRef = userCol('expenses').doc(expId);
+    await fbDb.runTransaction(async (tx) => {
+      // ✅ সব read আগে — amount fresh Firestore থেকে, client-state থেকে না
+      const expDoc = await tx.get(expRef);
+      if (!expDoc.exists) throw new Error('খরচ এন্ট্রি পাওয়া যায়নি — সম্ভবত ইতিমধ্যে মুছে ফেলা হয়েছে।');
+      const amount = expDoc.data().amount || 0;
+      const currentBalance = await readCashBalance(tx);
+      // ✅ সব write পরে
+      tx.delete(expRef);
+      applyCashDelta(tx, currentBalance, amount); // খরচ ডিলিট = cash ফেরত
+    });
+    return { success: true };
+  } catch (err) { return { success: false, message: err.message }; }
 }
 async function apiSaveSettings(data) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
