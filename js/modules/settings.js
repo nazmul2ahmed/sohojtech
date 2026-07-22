@@ -223,6 +223,7 @@ function openResetConfirm() {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('reset-modal', () => document.getElementById('reset-modal')?.remove());
 }
 
 async function confirmReset() {
