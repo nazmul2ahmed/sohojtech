@@ -334,6 +334,7 @@ function openReceiptModal(type, doc) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('receipt-modal', () => document.getElementById('receipt-modal')?.remove());
 
   document.getElementById('receipt-print-btn').addEventListener('click', () => printReceiptHTML(config));
   document.getElementById('receipt-share-btn').addEventListener('click', () => shareReceiptImage(config));
