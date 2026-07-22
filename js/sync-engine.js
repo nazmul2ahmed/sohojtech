@@ -178,6 +178,7 @@ async function openSyncPanel() {
       <button onclick="document.getElementById('sync-panel-modal').remove()" class="w-full border border-slate-300 dark:border-slate-600 rounded-lg py-2 text-sm text-slate-600 dark:text-slate-300">বন্ধ করুন</button>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('sync-panel-modal', () => document.getElementById('sync-panel-modal')?.remove());
   renderSyncPanelList(entries);
 
   document.getElementById('sync-now-btn')?.addEventListener('click', async () => {
