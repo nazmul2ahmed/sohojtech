@@ -153,6 +153,7 @@ function openCustomerForm(custId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('customer-form-modal', closeCustomerForm);
   document.getElementById('cf-name').focus();
 }
 
@@ -258,6 +259,7 @@ function openCollectDue(custId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('collect-due-modal', closeCollectDue);
   document.getElementById('cd-amount').focus();
 }
 
