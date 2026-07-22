@@ -89,7 +89,8 @@ function openSubscriptionPromo(context = 'trial', opts = {}) {
       </p>
       <button onclick="closeSubscriptionPromo()" class="w-full mt-3 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline">পরে দেখব</button>
     </div>`;
-  document.body.appendChild(modal);
+    document.body.appendChild(modal);
+    openAppModal('sub-promo-modal', () => document.getElementById('sub-promo-modal')?.remove());
 }
 
 function renderPlanCard(plan, isRenewal) {
