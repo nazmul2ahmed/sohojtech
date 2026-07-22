@@ -151,6 +151,7 @@ function openSupplierForm(supId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('supplier-form-modal', closeSupplierForm);
   document.getElementById('sf-name').focus();
 }
 
@@ -256,6 +257,7 @@ function openPayPayable(supId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('pay-payable-modal', closePayPayable);
   document.getElementById('pp-amount').focus();
 }
 
