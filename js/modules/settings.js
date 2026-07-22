@@ -82,6 +82,10 @@ function renderSettingsModule() {
             <div>অফলাইন সিঙ্ক: <span class="font-semibold ${APP_CONFIG.features.offlineSync ? 'text-emerald-600' : 'text-slate-400'}">${APP_CONFIG.features.offlineSync ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></div>
             <div>রিড-ওনলি গার্ড: <span class="font-semibold text-emerald-600">সক্রিয়</span></div>
           </div>
+          <div class="flex gap-3 mt-3 pt-3 border-t border-brand/10">
+            <a href="privacy.html" target="_blank" class="text-[11px] text-brand hover:underline">গোপনীয়তা নীতি</a>
+            <a href="terms.html" target="_blank" class="text-[11px] text-brand hover:underline">ব্যবহারের শর্তাবলী</a>
+          </div>
         </div>
       </div>
     </div>
