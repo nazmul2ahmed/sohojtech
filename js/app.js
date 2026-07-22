@@ -53,13 +53,22 @@ async function initApp() {
 }
 
 // ════════════════════════════════════════════════════════════
-// ✅ SMART NAVIGATION — Modal-aware back + double-back-to-exit
-// History API একটা stack — তাই "ট্যাব-হিস্ট্রি" (আগের ট্যাবে ফেরা)
-// ইচ্ছাকৃতভাবে বাদ দেওয়া হয়েছে (exit-guard-এর সাথে সাংঘর্ষিক)।
-// শুধু দুটো জিনিস: (১) মডাল খোলা থাকলে back = মডাল বন্ধ,
-// (২) মডাল না থাকলে back = double-press-to-exit।
+// ✅ SMART NAVIGATION — Modal-aware back + Tab-aware back + double-back-to-exit
+//
+// তিনটা স্তর, তিনটা ভিন্ন mechanism দিয়ে সামলানো হয় যাতে একটা আরেকটার
+// সাথে conflict না করে:
+//   ১) মডাল স্ট্যাক (APP_STATE.modalStack)      → মডাল খোলা থাকলে back = মডাল বন্ধ
+//   ২) ট্যাব হিস্ট্রি (APP_STATE.tabHistory)     → মডাল নেই কিন্তু আগে অন্য ট্যাব
+//                                                  থেকে এসেছি → সেই ট্যাবে ফিরে যাও
+//   ৩) Exit-guard (double-back-to-exit)          → মডাল নেই, tabHistory-ও খালি
+//                                                  (মানে এই ট্যাবই যাত্রার শুরু)
+//
+// আসল browser History API stack-এ শুধু একটাই "sentinel" এন্ট্রি থাকে —
+// tab-navigation পুরোপুরি APP_STATE.tabHistory (নিজস্ব in-memory array) দিয়ে
+// ট্র্যাক হয়, তাই History API-এর সাথে এর কোনো সংঘর্ষ হয় না।
 // ════════════════════════════════════════════════════════════
 APP_STATE.modalStack = []; // [{ id, closeFn }]
+APP_STATE.tabHistory = []; // ✅ নতুন — ভিজিট করা ট্যাবের ক্রম (browser History API না, নিজস্ব স্ট্যাক)
 let _navBackGuard = false; // programmatic closeAppModal() থেকে আসা popstate-কে আলাদা করতে
 let _lastExitPressAt = 0;
 const EXIT_PRESS_WINDOW_MS = 2500;
@@ -76,6 +85,7 @@ function initSmartNavigation() {
 }
 
 function handleAppPopState() {
+  // ১) মডাল খোলা থাকলে — সবার আগে মডাল বন্ধ করো, বাকি কিছুই না
   if (APP_STATE.modalStack.length) {
     const top = APP_STATE.modalStack.pop();
     try { top.closeFn(); } catch (err) { console.warn('Modal close-এ সমস্যা:', err); }
@@ -84,6 +94,16 @@ function handleAppPopState() {
   }
   if (_navBackGuard) { _navBackGuard = false; return; }
 
+  // ২) ✅ নতুন — tab-stack-এ পেছনে যাওয়ার মতো এন্ট্রি থাকলে সেই ট্যাবে ফিরে যাও
+  //    (এটা exit-guard trigger করে না, শুধু app-এর ভেতরেই এক ধাপ পেছনে যায়)
+  if (APP_STATE.tabHistory.length) {
+    const prevTab = APP_STATE.tabHistory.pop();
+    goTab(prevTab, { fromBack: true }); // fromBack: true → আবার tabHistory-তে push হবে না
+    history.pushState({ sentinel: true }, ''); // sentinel re-arm — future back-press-দের জন্য reserve রাখা
+    return;
+  }
+
+  // ৩) মডাল নেই, tab-history-ও খালি — এটাই যাত্রার প্রথম ট্যাব, তাই এখন exit-intent
   const now = Date.now();
   if (now - _lastExitPressAt < EXIT_PRESS_WINDOW_MS) {
     return; // দ্বিতীয়বার — এবার সত্যিই বের হতে দিচ্ছি, sentinel আর re-arm হবে না
@@ -299,7 +319,15 @@ function wireShellEvents() {
 // ════════════════════════════════════════════════════════════
 // TAB ROUTER
 // ════════════════════════════════════════════════════════════
-function goTab(tabId) {
+// ✅ opts.fromBack: true হলে বোঝায় এই কলটা handleAppPopState() থেকে
+// এসেছে (ইউজার Back চেপেছে) — তখন currentTab আবার tabHistory-তে push
+// করা হবে না, নাহলে back চাপলেও stack বাড়তেই থাকবে (ping-pong bug)।
+function goTab(tabId, opts = {}) {
+  // ✅ নতুন — সাধারণ (forward) নেভিগেশনেই কেবল আগের ট্যাব stack-এ push হবে
+  if (!opts.fromBack && APP_STATE.currentTab && APP_STATE.currentTab !== tabId) {
+    APP_STATE.tabHistory.push(APP_STATE.currentTab);
+  }
+
   APP_STATE.currentTab = tabId;
   localStorage.setItem('pharmacy-last-tab', tabId);
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
@@ -317,7 +345,7 @@ function goTab(tabId) {
   closeSidebar();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
-  // ট্যাব-নির্দিষ্ট রেন্ডার হুক — এখন শুধু dashboard ছিল , পরে বাকিগুলো যোগ হয়েছে 
+  // ট্যাব-নির্দিষ্ট রেন্ডার হুক — এখন শুধু dashboard ছিল , পরে বাকিগুলো যোগ হয়েছে 
   // ট্যাব-নির্দিষ্ট রেন্ডার হুক
 
   // ট্যাব-নির্দিষ্ট রেন্ডার হুক
