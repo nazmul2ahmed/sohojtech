@@ -193,6 +193,7 @@ function openMedicineForm(medId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('medicine-form-modal', closeMedicineForm);
   document.getElementById('mf-brand').focus();
 }
 
@@ -300,6 +301,7 @@ function openGlobalMedSearch() {
       <button onclick="document.getElementById('gm-search-modal').remove()" class="mt-3 border border-slate-300 dark:border-slate-600 rounded-lg py-2 text-sm text-slate-600 dark:text-slate-300">বন্ধ করুন</button>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('gm-search-modal', () => document.getElementById('gm-search-modal')?.remove());
   document.getElementById('gm-search-input').focus();
 }
 
