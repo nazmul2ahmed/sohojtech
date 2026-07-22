@@ -3,7 +3,8 @@
 document.addEventListener('DOMContentLoaded', () => {
   console.log(`${APP_CONFIG.appName} v${APP_CONFIG.version} booting...`);
   applyStoredTheme();
-  initAuthGate();   // ← বদলানো হলো (আগে ছিল initApp())
+  initSmartNavigation(); // ✅ নতুন — auth gate-এর আগে, যাতে boot থেকেই sentinel বসে
+  initAuthGate();
 });
 window.addEventListener('online', () => {
   updateConnBadge(true);
@@ -52,6 +53,61 @@ async function initApp() {
 }
 
 // ════════════════════════════════════════════════════════════
+// ✅ SMART NAVIGATION — Modal-aware back + double-back-to-exit
+// History API একটা stack — তাই "ট্যাব-হিস্ট্রি" (আগের ট্যাবে ফেরা)
+// ইচ্ছাকৃতভাবে বাদ দেওয়া হয়েছে (exit-guard-এর সাথে সাংঘর্ষিক)।
+// শুধু দুটো জিনিস: (১) মডাল খোলা থাকলে back = মডাল বন্ধ,
+// (২) মডাল না থাকলে back = double-press-to-exit।
+// ════════════════════════════════════════════════════════════
+APP_STATE.modalStack = []; // [{ id, closeFn }]
+let _navBackGuard = false; // programmatic closeAppModal() থেকে আসা popstate-কে আলাদা করতে
+let _lastExitPressAt = 0;
+const EXIT_PRESS_WINDOW_MS = 2500;
+
+function initSmartNavigation() {
+  // pushState (replaceState না) — স্ট্যাকে সবসময় অন্তত ২টা এন্ট্রি থাকবে
+  // ([root, sentinel]), তাই প্রথম back-এ সরাসরি অ্যাপ থেকে বের হয়ে যাবে না।
+  history.pushState({ sentinel: true }, '');
+  window.addEventListener('popstate', handleAppPopState);
+
+  // ✅ শেষ ট্যাবে ফেরা (রিফ্রেশ-পারসিস্টেন্স)
+  const savedTab = localStorage.getItem('pharmacy-last-tab');
+  if (savedTab && TAB_TITLES[savedTab]) APP_STATE.currentTab = savedTab;
+}
+
+function handleAppPopState() {
+  if (APP_STATE.modalStack.length) {
+    const top = APP_STATE.modalStack.pop();
+    try { top.closeFn(); } catch (err) { console.warn('Modal close-এ সমস্যা:', err); }
+    _navBackGuard = false;
+    return;
+  }
+  if (_navBackGuard) { _navBackGuard = false; return; }
+
+  const now = Date.now();
+  if (now - _lastExitPressAt < EXIT_PRESS_WINDOW_MS) {
+    return; // দ্বিতীয়বার — এবার সত্যিই বের হতে দিচ্ছি, sentinel আর re-arm হবে না
+  }
+  _lastExitPressAt = now;
+  toast('আবার Back চাপুন বের হতে', 'w');
+  history.pushState({ sentinel: true }, ''); // re-arm
+}
+
+// ✅ যেকোনো মডাল খোলার সময় এটা কল করুন (appendChild-এর ঠিক পরে)
+function openAppModal(id, closeFn) {
+  APP_STATE.modalStack.push({ id, closeFn });
+  history.pushState({ modal: id }, '');
+}
+
+// ✅ মডাল বন্ধ করার একমাত্র পথ — Cancel বাটন এবং সফল-সাবমিট দুই জায়গাতেই
+// এটা কল হবে, closeXxxForm() সরাসরি না। এটা history.back() কল করে,
+// যেটা popstate ফায়ার করে, যেটা modalStack থেকে pop করে আসল closeFn চালায়।
+function closeAppModal() {
+  if (!APP_STATE.modalStack.length) return;
+  _navBackGuard = true;
+  history.back();
+}
+// ════════════════════════════════════════════════════════════
 // SHELL RENDERING
 // ════════════════════════════════════════════════════════════
 function renderShell() {
@@ -59,6 +115,8 @@ function renderShell() {
   renderTabPanels();
   wireShellEvents();
   updateDarkToggleIcon();
+  if (APP_STATE.currentTab === 'admin' && !APP_STATE.isAdmin) APP_STATE.currentTab = 'dashboard';
+  if (APP_STATE.currentTab === 'ads' && !APP_STATE.ads.enabled) APP_STATE.currentTab = 'dashboard';
   goTab(APP_STATE.currentTab);
   setText('sidebar-pharma-name', APP_STATE.pharmacyName);
 }
@@ -243,6 +301,7 @@ function wireShellEvents() {
 // ════════════════════════════════════════════════════════════
 function goTab(tabId) {
   APP_STATE.currentTab = tabId;
+  localStorage.setItem('pharmacy-last-tab', tabId);
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
   const panel = document.getElementById('tab-' + tabId);
   if (panel) panel.classList.remove('hidden');
