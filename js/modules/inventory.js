@@ -262,6 +262,7 @@ function openBatchEdit(medId, batchId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  openAppModal('batch-edit-modal', closeBatchEdit);
 }
 
 function closeBatchEdit() {
