@@ -194,7 +194,7 @@ async function saveCashBalanceManual() {
     input.value = '';
     refreshCashBalanceCard();
   } catch (err) {
-    showFatalError('নগদ ব্যালান্স সেট করতে সমস্যা:\n' + err.message);
+    showFatalError('নগদ ব্যালান্স সেট করতে সমস্যা:\n' + humanizeError(err), err);
   } finally {
     btn.disabled = false;
     btn.textContent = 'সেট করুন';
@@ -241,7 +241,7 @@ async function saveSettingsForm() {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> সংরক্ষণ করুন';
   } catch (err) {
-    showFatalError('সেটিংস সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('সেটিংস সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> সংরক্ষণ করুন';
   }
@@ -315,5 +315,5 @@ async function confirmReset() {
     document.getElementById('reset-modal').remove();
     toast('সব ডেটা মুছে ফেলা হয়েছে। রিলোড হচ্ছে...', 's');
     setTimeout(() => location.reload(), 1200);
-  } catch (err) { showFatalError('রিসেট করতে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('রিসেট করতে সমস্যা:\n' + humanizeError(err), err); }
 }
