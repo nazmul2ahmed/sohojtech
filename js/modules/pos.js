@@ -181,19 +181,19 @@ function renderPOSItems() {
         <div class="col-span-4 md:col-span-2">
           <label class="block text-[11px] text-slate-400 mb-1">Qty</label>
           <input type="number" id="pos-qty-${i}" value="${item.qty}" min="1"
-            onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})"
+            onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})" onblur="onPOSFieldBlur(${i})"
             class="w-full px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
         <div class="col-span-4 md:col-span-2">
           <label class="block text-[11px] text-slate-400 mb-1">মূল্য (৳)</label>
           <input type="number" id="pos-price-${i}" value="${item.price}" min="0" step="0.01"
-            onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})"
+            onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})" onblur="onPOSFieldBlur(${i})"
             class="w-full px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
         <div class="col-span-4 md:col-span-1">
           <label class="block text-[11px] text-slate-400 mb-1">Disc %</label>
           <input type="number" id="pos-disc-${i}" value="${item.discountPct}" min="0" max="100"
-            onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})"
+            onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})" onblur="onPOSFieldBlur(${i})"
             class="w-full px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
         <div class="col-span-12 md:col-span-2 flex flex-col justify-end">
@@ -261,11 +261,30 @@ function applyMedicineToItem(i, med) {
 }
 
 function onPOSFieldChange(i) {
-  APP_STATE.posItems[i].qty = parseFloat(document.getElementById(`pos-qty-${i}`).value) || 0;
-  APP_STATE.posItems[i].price = parseFloat(document.getElementById(`pos-price-${i}`).value) || 0;
-  APP_STATE.posItems[i].discountPct = parseFloat(document.getElementById(`pos-disc-${i}`).value) || 0;
+  // ✅ ধাপ ০.২: qty/price >= 0, discountPct 0-100 এর মধ্যে বাধ্যতামূলক ক্ল্যাম্প —
+  // নেগেটিভ প্রাইস বা ১০০%+ ডিসকাউন্ট এখন থেকে কখনো state/billing-এ ঢুকবে না।
+  const qty = Math.max(0, parseFloat(document.getElementById(`pos-qty-${i}`).value) || 0);
+  const price = Math.max(0, parseFloat(document.getElementById(`pos-price-${i}`).value) || 0);
+  const discountPct = clamp(parseFloat(document.getElementById(`pos-disc-${i}`).value) || 0, 0, 100);
+
+  APP_STATE.posItems[i].qty = qty;
+  APP_STATE.posItems[i].price = price;
+  APP_STATE.posItems[i].discountPct = discountPct;
   updateLineTotal(i);
   calcPOSTotals();
+}
+
+// ✅ ধাপ ০.২: blur হলে ইনপুট ফিল্ডের ভিজিবল মান clamp-করা state-এর সাথে sync —
+// টাইপ করার সময় (oninput) কিছু বদলানো হয় না, তাই দশমিক টাইপিং UX অক্ষত থাকে।
+function onPOSFieldBlur(i) {
+  const item = APP_STATE.posItems[i];
+  if (!item) return;
+  const qtyEl = document.getElementById(`pos-qty-${i}`);
+  const priceEl = document.getElementById(`pos-price-${i}`);
+  const discEl = document.getElementById(`pos-disc-${i}`);
+  if (qtyEl) qtyEl.value = item.qty;
+  if (priceEl) priceEl.value = item.price;
+  if (discEl) discEl.value = item.discountPct;
 }
 
 function updateLineTotal(i) {
