@@ -323,6 +323,11 @@ async function queueExpenseOffline(exp) {
 async function queueCustomerReturnOffline(payload) {
   try {
     await queueWrite({ type: 'customerReturn', payload });
+    // ✅ ফিক্স: pendingReturns-এ এখনই push — returnedQty() এটা দেখতে পাবে,
+    // নাহলে sync হওয়ার আগে একই ইনভয়েসে দ্বিতীয়বার আংশিক রিটার্ন করলে
+    // over-return অনুমোদন হয়ে যেতে পারত।
+    APP_STATE.pendingReturns = APP_STATE.pendingReturns || [];
+    APP_STATE.pendingReturns.push(payload.returnDoc);
     return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — রিটার্ন নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
   } catch (err) {
     return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
@@ -332,6 +337,9 @@ async function queueCustomerReturnOffline(payload) {
 async function queueSupplierReturnOffline(payload) {
   try {
     await queueWrite({ type: 'supplierReturn', payload });
+    // ✅ ফিক্স: একই কারণে
+    APP_STATE.pendingReturns = APP_STATE.pendingReturns || [];
+    APP_STATE.pendingReturns.push(payload.returnDoc);
     return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — রিটার্ন/রাইট-অফ নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
   } catch (err) {
     return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
