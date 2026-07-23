@@ -881,6 +881,30 @@ async function apiGetCashBalance() {
 }
 
 // ────────────────────────────────────────────────────────────
+// ✅ ধাপ ৩২.৫: BALANCE SHEET (read-side) — O(1) cash-balance-doc read +
+// client-এ থাকা master-data sum (inventory/customers/suppliers — এগুলো
+// ১২-মাস cutoff/৮০০০ cap-এর বাইরে, boot-এই সম্পূর্ণ লোড হয়, তাই এখানে
+// কোনো নতুন Firestore query লাগছে না — শুধু APP_STATE থেকে sum)।
+// ────────────────────────────────────────────────────────────
+async function apiGetBalanceSheet() {
+  try {
+    const cashRes = await apiGetCashBalance();
+    if (!cashRes.success) return { success: false, message: cashRes.message };
+
+    const stockValue = round2(APP_STATE.inventory.reduce((a, b) => a + (b.costValue || 0), 0));
+    const customerDue = round2(APP_STATE.customers.reduce((a, b) => a + (b.due || 0), 0));
+    const supplierPayable = round2(APP_STATE.suppliers.reduce((a, b) => a + (b.totalPayable || 0), 0));
+    const cashBalance = cashRes.cashBalance;
+
+    // নিট পজিশন = নগদ + স্টক-মূল্য + গ্রাহক-বাকি (আসবে) − সরবরাহকারী-পাওনা (দিতে হবে)
+    const netPosition = round2(cashBalance + stockValue + customerDue - supplierPayable);
+
+    return { success: true, cashBalance, stockValue, customerDue, supplierPayable, netPosition };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+// ────────────────────────────────────────────────────────────
 // EXPENSE / SETTINGS / OPENING BALANCE
 // ────────────────────────────────────────────────────────────
 async function apiAddExpense(exp) {
