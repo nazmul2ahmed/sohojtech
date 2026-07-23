@@ -33,6 +33,7 @@ const APP_STATE = {
   supplierPayments: [], // সরবরাহকারী পাওনা পরিশোধের রেকর্ড
   pendingSales: [],       // অফলাইনে queue করা বিক্রয় (শুধু sync-badge-এর জন্য রেফারেন্স)
   pendingPurchases: [],   // অফলাইনে queue করা ক্রয়
+  pendingReturns: [],
 
   // POS/Purchase draft cart (multi-item form state — পরে ব্যবহৃত হবে)
   posItems: [],
