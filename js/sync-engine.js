@@ -199,6 +199,9 @@ function applySyncedCustomerReturn(entry) {
   returnDoc.items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
   if (custDueReduction > 0) applyCustomerDueChange(custId, -custDueReduction, 0);
   APP_STATE.returns.push(returnDoc);
+  // ✅ ফিক্স: sync সফল হলে pendingReturns থেকে সরানো — এখন এটা APP_STATE.returns-এ
+  // স্থায়ীভাবে আছে, তাই pending তালিকায় রাখলে returnedQty() ডাবল-গণনা করবে
+  APP_STATE.pendingReturns = (APP_STATE.pendingReturns || []).filter(r => r.returnId !== returnDoc.returnId);
   toast(`রিটার্ন ${returnDoc.returnId} সিঙ্ক হয়েছে।`, 's');
   if (APP_STATE.currentTab === 'returns') { renderRetForm(); renderTodayReturns(); }
 }
@@ -215,6 +218,8 @@ function applySyncedSupplierReturn(entry) {
   });
   if (supPayableReduction > 0) applySupplierPayableChange(supId, -supPayableReduction, 0);
   APP_STATE.returns.push(returnDoc);
+  // ✅ ফিক্স: একই কারণে pendingReturns থেকে সরানো
+  APP_STATE.pendingReturns = (APP_STATE.pendingReturns || []).filter(r => r.returnId !== returnDoc.returnId);
   toast(`রিটার্ন ${returnDoc.returnId} সিঙ্ক হয়েছে।`, 's');
   if (APP_STATE.currentTab === 'returns') { renderRetForm(); renderTodayReturns(); }
 }
@@ -333,6 +338,11 @@ function renderSyncPanelList(entries) {
     await discardFailedWrite(btn.dataset.tempid);
     if (entry?.type === 'sale') APP_STATE.pendingSales = (APP_STATE.pendingSales || []).filter(s => s.invoiceNo !== entry.payload.invoiceNo);
     if (entry?.type === 'purchase') APP_STATE.pendingPurchases = (APP_STATE.pendingPurchases || []).filter(p => p.purchaseId !== entry.payload.purchaseId);
+    // ✅ ফিক্স: রিটার্ন এন্ট্রি ম্যানুয়ালি বাতিল করলেও pendingReturns থেকে সরাতে হবে,
+    // নাহলে "ভূতুড়ে" এন্ট্রি চিরকাল returnedQty()-এর cap-হিসাবে থেকে যাবে
+    if (entry?.type === 'customerReturn' || entry?.type === 'supplierReturn') {
+      APP_STATE.pendingReturns = (APP_STATE.pendingReturns || []).filter(r => r.returnId !== entry.payload.returnDoc.returnId);
+    }
     renderSyncPanelList(await getPendingWrites());
     refreshSyncBadge();
     toast('এন্ট্রি বাতিল করা হয়েছে।', 'w');
