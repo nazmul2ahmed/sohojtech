@@ -27,7 +27,7 @@ async function apiAddMedicine(data) {
       unit: data.unit || 'পাতা', reorderLevel: parseInt(data.reorderLevel) || 10,
     });
     return { success: true, medId: id, message: '"' + data.brand + '" যোগ হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiUpdateMedicine(medId, data) {
@@ -44,7 +44,7 @@ async function apiUpdateMedicine(medId, data) {
     if (data.reorderLevel !== undefined) f.reorderLevel = parseInt(data.reorderLevel) || 10;
     await userCol('medicines').doc(medId).update(f);
     return { success: true, message: 'ওষুধ আপডেট হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiDeleteMedicine(medId) {
@@ -56,18 +56,18 @@ async function apiDeleteMedicine(medId) {
     }
     await userCol('medicines').doc(medId).delete();
     return { success: true, message: 'ওষুধ মুছে ফেলা হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiSetInventoryRow(medId, data) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('inventory').doc(medId).set(data); return { success: true }; }
-  catch (err) { return { success: false, message: err.message }; }
+  catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 async function apiUpdateInventoryFields(medId, fields) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('inventory').doc(medId).update(fields); return { success: true }; }
-  catch (err) { return { success: false, message: err.message }; }
+  catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ async function apiAddCustomer(data) {
     if (existing.exists) return { success: false, message: '"' + data.id + '" ইতোমধ্যে আছে।' };
     await ref.set({ id: data.id, name: data.name || '', phone: data.phone || '', address: data.address || '', due: 0, totalPaid: 0 });
     return { success: true, message: '"' + data.name + '" নিবন্ধিত হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiUpdateCustomer(custId, data) {
@@ -93,7 +93,7 @@ async function apiUpdateCustomer(custId, data) {
     if (data.address !== undefined) f.address = data.address;
     await userCol('customers').doc(custId).update(f);
     return { success: true, message: 'গ্রাহক আপডেট হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiDeleteCustomer(custId) {
@@ -104,7 +104,7 @@ async function apiDeleteCustomer(custId) {
     if ((doc.data().due || 0) > 0) return { success: false, message: '৳' + doc.data().due + ' বাকি আছে। পরিশোধের পর মুছুন।' };
     await userCol('customers').doc(custId).delete();
     return { success: true, message: 'গ্রাহক মুছে ফেলা হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amount, note, custData) {
@@ -136,7 +136,7 @@ async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amoun
     });
 
     return { success: true, message: `৳${fmt(amount)} আদায় হয়েছে।` };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 const OFFLINE_MSG = 'ইন্টারনেট সংযোগ নেই — এই মুহূর্তে সংরক্ষণ করা যাবে না। সংযোগ ফিরলে আবার চেষ্টা করুন।';
 // ────────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ async function apiAddSupplier(data) {
     if (existing.exists) return { success: false, message: '"' + data.id + '" ইতোমধ্যে আছে।' };
     await ref.set({ id: data.id, name: data.name || '', phone: data.phone || '', address: data.address || '', totalPayable: 0, totalPaid: 0 });
     return { success: true, message: '"' + data.name + '" যোগ হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiUpdateSupplier(supId, data) {
@@ -162,7 +162,7 @@ async function apiUpdateSupplier(supId, data) {
     if (data.address !== undefined) f.address = data.address;
     await userCol('suppliers').doc(supId).update(f);
     return { success: true, message: 'সরবরাহকারী আপডেট হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiDeleteSupplier(supId) {
@@ -174,7 +174,7 @@ async function apiDeleteSupplier(supId) {
     }
     await userCol('suppliers').doc(supId).delete();
     return { success: true, message: 'সরবরাহকারী মুছে ফেলা হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, amount, note, supData) {
@@ -206,7 +206,7 @@ async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, am
     });
 
     return { success: true, message: `৳${fmt(amount)} পরিশোধ করা হয়েছে।` };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -234,10 +234,11 @@ function withTimeout(promise, ms) {
 // navigator.onLine সত্য বলছে, কিন্তু transaction আসলে network-জনিত কারণে
 // ব্যর্থ হয়েছে কিনা তা শনাক্ত করে — যাতে এটাকে ব্যবসায়িক এরর (যেমন
 // "স্টক অপর্যাপ্ত") এর সাথে গুলিয়ে না ফেলি।
+// ✅ ধাপ ০.৩: netCodes লোকাল অ্যারে বাদ — utils.js-এর শেয়ার্ড NETWORK_ERROR_CODES
+// ব্যবহার করা হচ্ছে, যাতে network-error কোডের তালিকা একটাই জায়গায় মেইনটেইন হয়
 function isConnectivityError(err) {
   if (!err) return false;
-  const netCodes = ['unavailable', 'deadline-exceeded', 'cancelled', 'internal', 'unknown', 'aborted', 'resource-exhausted', 'client-timeout'];
-  if (err.code && netCodes.includes(err.code)) return true;
+  if (err.code && NETWORK_ERROR_CODES.includes(err.code)) return true;
   const msg = (err.message || '').toLowerCase();
   return msg.includes('offline') || msg.includes('network') || msg.includes('backend didn') || msg.includes('failed to get document');
 }
@@ -251,7 +252,7 @@ async function queueSaleOffline(sale) {
     APP_STATE.pendingSales.push(sale);
     return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Invoice: ${sale.invoiceNo}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
   } catch (err) {
-    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
   }
 }
 
@@ -262,7 +263,7 @@ async function queuePurchaseOffline(purchase) {
     APP_STATE.pendingPurchases.push(purchase);
     return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — Purchase: ${purchase.purchaseId}। নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
   } catch (err) {
-    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + err.message };
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
   }
 }
 
@@ -400,7 +401,7 @@ async function apiSubmitSale(sale, opts = {}) {
       }
       return await queueSaleOffline(sale);
     }
-    return { success: false, message: err.message };
+    return { success: false, message: humanizeError(err) };
   }
 }
 
@@ -456,7 +457,7 @@ async function apiDeleteSale(sale) {
     });
 
     return { success: true, message: 'বিক্রয় মুছে ফেলা হয়েছে, স্টক/বাকি ফেরত হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 
@@ -537,7 +538,7 @@ async function apiSubmitPurchase(purchase, opts = {}) {
       }
       return await queuePurchaseOffline(purchase);
     }
-    return { success: false, message: err.message };
+    return { success: false, message: humanizeError(err) };
   }
 }
 
@@ -590,7 +591,7 @@ async function apiDeletePurchase(purchase) {
     });
 
     return { success: true, message: 'ক্রয় মুছে ফেলা হয়েছে, স্টক/পাওনা ফেরত হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -646,7 +647,7 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
     });
 
     return { success: true, message: 'রিটার্ন সফল হয়েছে!' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
@@ -719,7 +720,7 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
     });
 
     return { success: true, message: returnDoc.reason === 'ধ্বংস' ? 'মেয়াদোত্তীর্ণ পণ্য রাইট-অফ হয়েছে!' : 'সাপ্লায়ার রিটার্ন সফল!' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiDeleteReturn(ret) {
@@ -822,7 +823,7 @@ async function apiDeleteReturn(ret) {
     });
 
     return { success: true, message: 'রিটার্ন মুছে ফেলা হয়েছে, প্রভাব উল্টানো হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -870,14 +871,14 @@ async function apiSetCashBalance(amount) {
       lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
     return { success: true };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiGetCashBalance() {
   try {
     const doc = await balanceRef().get();
     return { success: true, cashBalance: doc.exists ? (doc.data().cashBalance || 0) : 0 };
-  } catch (err) { return { success: false, message: err.message, cashBalance: 0 }; }
+  } catch (err) { return { success: false, message: humanizeError(err), cashBalance: 0 }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -901,7 +902,7 @@ async function apiGetBalanceSheet() {
 
     return { success: true, cashBalance, stockValue, customerDue, supplierPayable, netPosition };
   } catch (err) {
-    return { success: false, message: err.message };
+    return { success: false, message: humanizeError(err) };
   }
 }
 // ────────────────────────────────────────────────────────────
@@ -919,7 +920,7 @@ async function apiAddExpense(exp) {
       applyCashDelta(tx, currentBalance, -(exp.amount || 0)); // খরচ = cash কমে
     });
     return { success: true };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiDeleteExpense(expId) {
@@ -937,12 +938,12 @@ async function apiDeleteExpense(expId) {
       applyCashDelta(tx, currentBalance, amount); // খরচ ডিলিট = cash ফেরত
     });
     return { success: true };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 async function apiSaveSettings(data) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try { await userCol('config').doc('settings').set(data, { merge: true }); return { success: true }; }
-  catch (err) { return { success: false, message: err.message }; }
+  catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1013,7 +1014,7 @@ async function apiSubmitOpeningEntry(entry) {
     });
 
     return { success: true };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiDeleteOpeningEntry(entry) {
@@ -1073,7 +1074,7 @@ async function apiDeleteOpeningEntry(entry) {
     });
 
     return { success: true };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1151,7 +1152,7 @@ async function apiGetCompleteData() {
       capReached,
     };
   } catch (err) {
-    return { success: false, message: err.message, medicines: [], customers: [], suppliers: [], inventory: [], sales: [], purchases: [], returns: [], expenses: [], payments: [], supplierPayments: [], openingEntries: [], capReached: { sales: false, purchases: false, returns: false } };
+    return { success: false, message: humanizeError(err), medicines: [], customers: [], suppliers: [], inventory: [], sales: [], purchases: [], returns: [], expenses: [], payments: [], supplierPayments: [], openingEntries: [], capReached: { sales: false, purchases: false, returns: false } };
   }
 }
 
@@ -1176,7 +1177,7 @@ async function apiGetOlderHistory() {
       payments: paySnap.docs.map(d => d.data()), supplierPayments: supPaySnap.docs.map(d => d.data()),
     };
   } catch (err) {
-    return { success: false, message: err.message };
+    return { success: false, message: humanizeError(err) };
   }
 }
 
@@ -1207,7 +1208,7 @@ async function apiGetHistoryByPeriod(fromDate, toDate) {
       supplierPayments: supPaySnap.docs.map(d => d.data()),
     };
   } catch (err) {
-    return { success: false, message: err.message };
+    return { success: false, message: humanizeError(err) };
   }
 }
 
@@ -1230,7 +1231,7 @@ async function apiResetAllData() {
     // balance থেকে যাবে (নতুন খালি অ্যাকাউন্টে পুরনো ব্যালান্স দেখাবে)।
     await balanceRef().delete().catch(() => {}); // doc না থাকলেও নিরাপদে এগোবে
     return { success: true, message: 'সব ডেটা মুছে ফেলা হয়েছে।' };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 // collection query cache-first, খালি cache হলে fallback default (প্রথমবার অনলাইন বুট দরকার)
 async function cget2(colRef) {
@@ -1248,7 +1249,7 @@ async function apiSearchGlobalMedicines(prefix) {
     const snap = await fbDb.collection('globalMedicines')
       .orderBy('brandLower').startAt(p).endAt(p + '\uf8ff').limit(25).get();
     return { success: true, results: snap.docs.map(d => d.data()) };
-  } catch (err) { return { success: false, message: err.message, results: [] }; }
+  } catch (err) { return { success: false, message: humanizeError(err), results: [] }; }
 }
 
 async function apiImportGlobalMedicine(med) {
@@ -1259,7 +1260,7 @@ async function apiImportGlobalMedicine(med) {
     await userCol('medicines').doc(id).set(data);
     await userCol('inventory').doc(id).set({ medId: id, brand: data.brand, doseForm: data.doseForm, strength: data.strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] });
     return { success: true, medId: id };
-  } catch (err) { return { success: false, message: err.message }; }
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 // ── ADMIN: bulk upload globalMedicines ──
@@ -1286,6 +1287,7 @@ async function apiBulkUploadGlobalMedicines(rows, onProgress) {
         await batch.commit();
       } catch (err) {
         // ✅ Quota শেষ হলে স্পষ্ট বার্তা + এখান পর্যন্ত যা হয়েছে তা রিপোর্ট করা
+        // (এই মেসেজ ইচ্ছাকৃতভাবে err.message ব্যবহার করে না — কাস্টম বাংলা বার্তা, শুধু err.code চেক করা হয়)
         if (err.code === 'resource-exhausted') {
           return { success: false, quotaExceeded: true, count: done, message: `Firestore দৈনিক সীমা শেষ। ${done}/${total} টি আপলোড হয়েছে — বাকিটা quota রিসেট হলে (মধ্যরাত, Pacific Time) আবার এই একই CSV পেস্ট করলে বাকি অংশ থেকেই চলবে, ডুপ্লিকেট হবে না।` };
         }
@@ -1296,7 +1298,7 @@ async function apiBulkUploadGlobalMedicines(rows, onProgress) {
     }
     return { success: true, count: done };
   } catch (err) {
-    return { success: false, message: err.message };
+    return { success: false, message: humanizeError(err) };
   }
 }
 
@@ -1348,6 +1350,6 @@ async function apiUpdateBatch(medId, batchId, fields) {
 
     return { success: true, message: 'ব্যাচ আপডেট হয়েছে।' };
   } catch (err) {
-    return { success: false, message: err.message };
+    return { success: false, message: humanizeError(err) };
   }
 }
