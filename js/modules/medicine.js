@@ -256,7 +256,7 @@ async function saveMedicine(medId) {
     closeMedicineForm();
     renderMedTable();
   } catch (err) {
-    showFatalError('ওষুধ সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('ওষুধ সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.textContent = 'সংরক্ষণ করুন';
   }
@@ -284,7 +284,7 @@ async function deleteMedicineConfirm(medId) {
     toast('ওষুধ মুছে ফেলা হয়েছে।', 's');
     renderMedTable();
   } catch (err) {
-    showFatalError('ওষুধ মুছতে সমস্যা:\n' + err.message);
+    showFatalError('ওষুধ মুছতে সমস্যা:\n' + humanizeError(err), err);
   }
 }
 
