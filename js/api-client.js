@@ -319,6 +319,24 @@ async function queueExpenseOffline(exp) {
     return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
   }
 }
+
+async function queueCustomerReturnOffline(payload) {
+  try {
+    await queueWrite({ type: 'customerReturn', payload });
+    return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — রিটার্ন নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+  } catch (err) {
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
+  }
+}
+
+async function queueSupplierReturnOffline(payload) {
+  try {
+    await queueWrite({ type: 'supplierReturn', payload });
+    return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — রিটার্ন/রাইট-অফ নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+  } catch (err) {
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
+  }
+}
 // ────────────────────────────────────────────────────────────
 // SALE (POS)
 // ────────────────────────────────────────────────────────────
@@ -649,17 +667,27 @@ async function apiDeletePurchase(purchase) {
 // ────────────────────────────────────────────────────────────
 // RETURNS
 // ────────────────────────────────────────────────────────────
-async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
-  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction, opts = {}) {
+  const isRetry = !!opts.isRetry;
+
+  if (!navigator.onLine) {
+    if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
+    return await queueCustomerReturnOffline({ returnDoc, custId, custDueReduction });
+  }
+
   try {
     const uniqueMedIds = [...new Set(returnDoc.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
     const custRef = custDueReduction > 0 ? userCol('customers').doc(custId) : null;
+    const retRef = userCol('returns').doc(returnDoc.returnId);
 
-    await fbDb.runTransaction(async (tx) => {
+    await withTimeout(fbDb.runTransaction(async (tx) => {
+      // ✅ ধাপ ০.১.৩: idempotency গার্ড — sale/purchase/customerDue প্যাটার্ন
+      const existingRetDoc = await tx.get(retRef);
+      if (existingRetDoc.exists) return;
+
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const custDoc = custRef ? await tx.get(custRef) : null;
-      // ✅ ধাপ ৩২.৩
       const currentBalance = await readCashBalance(tx);
 
       const invMap = {};
@@ -667,7 +695,6 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
 
       returnDoc.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
-        // ✅ ফিক্স: consumedBatches অনুযায়ী সঠিক ব্যাচে ফেরত
         e.data.batches = restockBatchesFromConsumed([...(e.data.batches || [])], item, 'BAT-RET', e.data.sellPrice);
       });
 
@@ -676,10 +703,9 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
         custFields = { due: round2((custDoc.data().due || 0) - custDueReduction) };
       }
 
-      tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
+      tx.set(retRef, returnDoc);
       Object.values(invMap).forEach(e => {
         if (!e.data) return;
-        // ✅ ফিক্স (ধাপ ২৩): status/nearestExpiry এখন সঠিকভাবে রিক্যালকুলেট
         const med = APP_STATE.medicines.find(m => m.id === e.medId);
         const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
         const derived = computeInventoryDerivedFields(e.data.batches, reorderLevel);
@@ -694,35 +720,45 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
         }, { merge: true });
       });
       if (custRef && custFields) tx.update(custRef, custFields);
-      // ✅ ধাপ ৩২.৩: শুধু 'নগদ ফেরত' হলেই cash কমে; 'বাকি সমন্বয়' হলে অপরিবর্তিত
       if (returnDoc.refundMethod === 'নগদ ফেরত') applyCashDelta(tx, currentBalance, -returnDoc.amount);
-    });
+    }), FIRESTORE_WRITE_TIMEOUT_MS);
 
     return { success: true, message: 'রিটার্ন সফল হয়েছে!' };
-  } catch (err) { return { success: false, message: humanizeError(err) }; }
+  } catch (err) {
+    if (isConnectivityError(err)) {
+      if (isRetry) return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
+      return await queueCustomerReturnOffline({ returnDoc, custId, custDueReduction });
+    }
+    return { success: false, message: humanizeError(err) };
+  }
 }
 
-async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
-  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction, opts = {}) {
+  const isRetry = !!opts.isRetry;
+
+  if (!navigator.onLine) {
+    if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
+    return await queueSupplierReturnOffline({ returnDoc, supId, supPayableReduction });
+  }
+
   try {
     const uniqueMedIds = [...new Set(returnDoc.items.map(i => i.medId))];
     const invRefs = uniqueMedIds.map(id => userCol('inventory').doc(id));
     const supRef = supPayableReduction > 0 ? userCol('suppliers').doc(supId) : null;
+    const retRef = userCol('returns').doc(returnDoc.returnId);
 
-    await fbDb.runTransaction(async (tx) => {
-      // ✅ সব read আগে
+    await withTimeout(fbDb.runTransaction(async (tx) => {
+      // ✅ ধাপ ০.১.৩: idempotency গার্ড
+      const existingRetDoc = await tx.get(retRef);
+      if (existingRetDoc.exists) return;
+
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const supDoc = supRef ? await tx.get(supRef) : null;
-      // ✅ ধাপ ৩২.৩
       const currentBalance = await readCashBalance(tx);
 
       const invMap = {};
       uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null, medId: id }; });
 
-      // ✅ ফিক্স: batch-precise deduction — item.batchId থাকলে ঠিক সেই ব্যাচ থেকেই
-      // কাটা হয় (নির্দিষ্ট ব্যাচ না পেলে বা স্টক অপর্যাপ্ত হলে error, partial-write
-      // ঝুঁকি নেই কারণ এই throw সব read-এর পরে কিন্তু সব write-এর আগে ঘটে)।
-      // batchId না থাকলে (পুরনো/legacy রেকর্ড) আগের FEFO heuristic অক্ষত থাকছে।
       returnDoc.items.forEach(item => {
         const e = invMap[item.medId]; if (!e.data) return;
         let batches = [...(e.data.batches || [])];
@@ -732,7 +768,6 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
           if (batches[idx].stock < item.qty) throw new Error(`"${item.name}" — এই ব্যাচে পর্যাপ্ত স্টক নেই (আছে: ${batches[idx].stock})।`);
           batches[idx] = { ...batches[idx], stock: batches[idx].stock - item.qty };
         } else {
-          // legacy fallback — furthest-expiry-first heuristic অক্ষত, শুধু sort ✅ ধাপ ৩১ ফিক্স
           batches.sort((a, b) => compareBatchExpiry(a, b, 'desc'));
           let remaining = item.qty;
           batches = batches.map(b => { if (remaining <= 0) return b; const take = Math.min(b.stock, remaining); remaining -= take; return { ...b, stock: b.stock - take }; });
@@ -744,6 +779,38 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
       if (supRef && supDoc && supDoc.exists) {
         supFields = { totalPayable: Math.max(0, round2((supDoc.data().totalPayable || 0) - supPayableReduction)) };
       }
+
+      tx.set(retRef, returnDoc);
+      Object.values(invMap).forEach(e => {
+        if (!e.data) return;
+        const med = APP_STATE.medicines.find(m => m.id === e.medId);
+        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+        const derived = computeInventoryDerivedFields(e.data.batches, reorderLevel);
+        tx.set(e.ref, {
+          ...e.data,
+          batches: derived.batches,
+          totalStock: derived.totalStock,
+          costValue: derived.costValue,
+          mrpValue: derived.mrpValue,
+          nearestExpiry: derived.nearestExpiry,
+          status: derived.status,
+        }, { merge: true });
+      });
+      if (supRef && supFields) tx.update(supRef, supFields);
+      if (returnDoc.reason === 'ফেরত' && returnDoc.refundMethod === 'নগদ ফেরত') {
+        applyCashDelta(tx, currentBalance, returnDoc.amount);
+      }
+    }), FIRESTORE_WRITE_TIMEOUT_MS);
+
+    return { success: true, message: returnDoc.reason === 'ধ্বংস' ? 'মেয়াদোত্তীর্ণ পণ্য রাইট-অফ হয়েছে!' : 'সাপ্লায়ার রিটার্ন সফল!' };
+  } catch (err) {
+    if (isConnectivityError(err)) {
+      if (isRetry) return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
+      return await queueSupplierReturnOffline({ returnDoc, supId, supPayableReduction });
+    }
+    return { success: false, message: humanizeError(err) };
+  }
+}
 
       // ✅ সব write পরে
       tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
