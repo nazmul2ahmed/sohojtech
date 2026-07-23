@@ -606,6 +606,8 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
     await fbDb.runTransaction(async (tx) => {
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const custDoc = custRef ? await tx.get(custRef) : null;
+      // ✅ ধাপ ৩২.৩
+      const currentBalance = await readCashBalance(tx);
 
       const invMap = {};
       uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null, medId: id }; });
@@ -639,6 +641,8 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction) {
         }, { merge: true });
       });
       if (custRef && custFields) tx.update(custRef, custFields);
+      // ✅ ধাপ ৩২.৩: শুধু 'নগদ ফেরত' হলেই cash কমে; 'বাকি সমন্বয়' হলে অপরিবর্তিত
+      if (returnDoc.refundMethod === 'নগদ ফেরত') applyCashDelta(tx, currentBalance, -returnDoc.amount);
     });
 
     return { success: true, message: 'রিটার্ন সফল হয়েছে!' };
@@ -656,6 +660,8 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
       // ✅ সব read আগে
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const supDoc = supRef ? await tx.get(supRef) : null;
+      // ✅ ধাপ ৩২.৩
+      const currentBalance = await readCashBalance(tx);
 
       const invMap = {};
       uniqueMedIds.forEach((id, idx) => { invMap[id] = { ref: invRefs[idx], data: invDocs[idx].exists ? { ...invDocs[idx].data() } : null, medId: id }; });
@@ -705,6 +711,11 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction) {
         }, { merge: true });
       });
       if (supRef && supFields) tx.update(supRef, supFields);
+      // ✅ ধাপ ৩২.৩: শুধু reason==='ফেরত' && refundMethod==='নগদ ফেরত' হলেই cash বাড়ে
+      // ('ধ্বংস' write-off বা 'পাওনা সমন্বয়' হলে cash অপরিবর্তিত)
+      if (returnDoc.reason === 'ফেরত' && returnDoc.refundMethod === 'নগদ ফেরত') {
+        applyCashDelta(tx, currentBalance, returnDoc.amount);
+      }
     });
 
     return { success: true, message: returnDoc.reason === 'ধ্বংস' ? 'মেয়াদোত্তীর্ণ পণ্য রাইট-অফ হয়েছে!' : 'সাপ্লায়ার রিটার্ন সফল!' };
@@ -727,6 +738,8 @@ async function apiDeleteReturn(ret) {
     await fbDb.runTransaction(async (tx) => {
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const partyDoc = partyRef ? await tx.get(partyRef) : null;
+      // ✅ ধাপ ৩২.৩
+      const currentBalance = await readCashBalance(tx);
 
       const invMap = {};
       uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null, medId: id }; });
@@ -799,6 +812,13 @@ async function apiDeleteReturn(ret) {
         }, { merge: true });
       });
       if (partyRef && partyFields) tx.update(partyRef, partyFields);
+
+      // ✅ ধাপ ৩২.৩: reverse — submit-এর ঠিক উল্টো sign
+      if (ret.returnType === 'customer') {
+        if (ret.refundMethod === 'নগদ ফেরত') applyCashDelta(tx, currentBalance, ret.amount); // ফেরত-দেওয়া নগদ আবার যোগ
+      } else {
+        if (ret.reason === 'ফেরত' && ret.refundMethod === 'নগদ ফেরত') applyCashDelta(tx, currentBalance, -ret.amount); // পাওয়া নগদ আবার বাদ
+      }
     });
 
     return { success: true, message: 'রিটার্ন মুছে ফেলা হয়েছে, প্রভাব উল্টানো হয়েছে।' };
@@ -833,6 +853,31 @@ function applyCashDelta(tx, currentBalance, delta) {
     cashBalance: round2(currentBalance + delta),
     lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ৩২.৪: MANUAL CASH BALANCE SET — migration/backfill-এর জন্য।
+// বিদ্যমান ইউজারদের ইতিহাস sum করে backfill করা সম্ভব না (cap-সমস্যা,
+// Admin SDK লাগবে) — তাই Settings থেকে ইউজার নিজে physical cash-count
+// করে একবার initial value বসাবেন। এটা delta না, সরাসরি overwrite —
+// তাই runTransaction লাগছে না, কোনো অন্য read-এর ওপর নির্ভরশীল না।
+// ────────────────────────────────────────────────────────────
+async function apiSetCashBalance(amount) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    await balanceRef().set({
+      cashBalance: round2(amount),
+      lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { success: true };
+  } catch (err) { return { success: false, message: err.message }; }
+}
+
+async function apiGetCashBalance() {
+  try {
+    const doc = await balanceRef().get();
+    return { success: true, cashBalance: doc.exists ? (doc.data().cashBalance || 0) : 0 };
+  } catch (err) { return { success: false, message: err.message, cashBalance: 0 }; }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -892,6 +937,8 @@ async function apiSubmitOpeningEntry(entry) {
       const invDoc = invRef ? await tx.get(invRef) : null;
       const custDoc = custRef ? await tx.get(custRef) : null;
       const supDoc = supRef ? await tx.get(supRef) : null;
+      // ✅ ধাপ ৩২.৪: শুধু 'নগদ' ক্যাটাগরিতেই দরকার — অন্য রেফের মতোই conditional read
+      const currentBalance = entry.category === 'নগদ' ? await readCashBalance(tx) : null;
 
       // ✅ কম্পিউট (কোনো write এখনো হয়নি)
       let invFields = null, invExists = false;
@@ -937,6 +984,8 @@ async function apiSubmitOpeningEntry(entry) {
       if (invRef && invFields) { if (invExists) tx.update(invRef, invFields); else tx.set(invRef, invFields); }
       if (custRef && custFields) tx.update(custRef, custFields);
       if (supRef && supFields) tx.update(supRef, supFields);
+      // ✅ ধাপ ৩২.৪: 'নগদ' opening entry — cash balance বৃদ্ধি
+      if (entry.category === 'নগদ') applyCashDelta(tx, currentBalance, entry.amount);
     });
 
     return { success: true };
@@ -956,6 +1005,8 @@ async function apiDeleteOpeningEntry(entry) {
       const invDoc = invRef ? await tx.get(invRef) : null;
       const custDoc = custRef ? await tx.get(custRef) : null;
       const supDoc = supRef ? await tx.get(supRef) : null;
+      // ✅ ধাপ ৩২.৪
+      const currentBalance = entry.category === 'নগদ' ? await readCashBalance(tx) : null;
 
       // ✅ কম্পিউট
       let invFields = null;
@@ -966,10 +1017,6 @@ async function apiDeleteOpeningEntry(entry) {
         const med = APP_STATE.medicines.find(m => m.id === entry.medicineId);
         const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
 
-        // ✅ ফিক্স (ধাপ ২৩, রিফ্যাক্টর): shared হেল্পার — আগে শুধু
-        // totalStock/costValue/mrpValue লেখা হতো, status/nearestExpiry
-        // Firestore-এ stale থেকে যেত ব্যাচ ডিলিটের পরও। এখন সব ফিল্ড
-        // সঠিকভাবে রিক্যালকুলেট হচ্ছে।
         const derived = computeInventoryDerivedFields(rawBatches, reorderLevel);
 
         invFields = {
@@ -997,6 +1044,8 @@ async function apiDeleteOpeningEntry(entry) {
       if (invRef && invFields) tx.update(invRef, invFields);
       if (custRef && custFields) tx.update(custRef, custFields);
       if (supRef && supFields) tx.update(supRef, supFields);
+      // ✅ ধাপ ৩২.৪: 'নগদ' opening entry ডিলিট — cash balance থেকে বাদ (reverse)
+      if (entry.category === 'নগদ') applyCashDelta(tx, currentBalance, -entry.amount);
     });
 
     return { success: true };
@@ -1152,6 +1201,10 @@ async function apiResetAllData() {
         await batch.commit();
       }
     }
+    // ✅ ধাপ ৩২.৪: cash balance রিসেট — config/settings (ফার্মেসি তথ্য) স্পর্শ না
+    // করে শুধু config/balances মুছে ফেলা হচ্ছে, নাহলে রিসেটের পর stale cash
+    // balance থেকে যাবে (নতুন খালি অ্যাকাউন্টে পুরনো ব্যালান্স দেখাবে)।
+    await balanceRef().delete().catch(() => {}); // doc না থাকলেও নিরাপদে এগোবে
     return { success: true, message: 'সব ডেটা মুছে ফেলা হয়েছে।' };
   } catch (err) { return { success: false, message: err.message }; }
 }
