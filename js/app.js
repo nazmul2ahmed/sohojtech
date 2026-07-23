@@ -285,6 +285,13 @@ function renderTabPanels() {
         <div id="ads-content"></div>
       </div>`;
     }
+    // ১৫. যোগাযোগ ও সাবস্ক্রিপশন (Contact) ট্যাব
+    if (item.id === 'contact') {
+      return `<div id="tab-contact" class="tab-panel hidden tab-enter">
+        <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
+        <div id="contact-content"></div>
+      </div>`;
+    }
     // . বাকি সব ডিফল্ট/প্লেসহোল্ডার ট্যাব
     return `<div id="tab-${item.id}" class="tab-panel hidden tab-enter">
       <div class="mb-5">
@@ -364,6 +371,7 @@ function goTab(tabId, opts = {}) {
     if (tabId === 'settings') { renderSettingsModule(); }
     if (tabId === 'admin') { renderAdminModule(); }
     if (tabId === 'ads') { renderAdsModule(); }
+    if (tabId === 'contact') { renderContactModule(); }
   } catch (err) {
     showFatalError('goTab("' + tabId + '") এ সমস্যা:\n' + err.message);
   }
