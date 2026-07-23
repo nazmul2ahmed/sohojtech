@@ -116,3 +116,11 @@ function resolveMedicineMatch(query, list, textFn) {
 
   return { type: 'none' };
 }
+
+// ════════════════════════════════════════════════════════════
+// ✅ সাধারণ clamp হেল্পার — POS/Purchase-এর qty/price/discount
+// ক্ল্যাম্প করতে ব্যবহৃত হয়, বিলিং-ইন্টিগ্রিটি রক্ষায়।
+// ════════════════════════════════════════════════════════════
+function clamp(val, min, max) {
+  return Math.min(max, Math.max(min, val));
+}
