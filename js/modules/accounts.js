@@ -224,8 +224,15 @@ async function submitExpenseEntry() {
   try {
     const res = await apiAddExpense(exp);
     if (!res.success) return showErr(res.message);
-    APP_STATE.expenses.push(exp);
-    toast('খরচ যোগ হয়েছে।', 's');
+
+    if (res.queued) {
+      toast(res.message, 'w');
+      refreshSyncBadge();
+    } else {
+      APP_STATE.expenses.push(exp);
+      toast('খরচ যোগ হয়েছে।', 's');
+    }
+
     toggleExpenseForm();
     renderLedgerTable();
   } catch (err) { showFatalError('খরচ সংরক্ষণে সমস্যা:\n' + humanizeError(err), err); }
