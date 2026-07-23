@@ -285,17 +285,25 @@ async function saveCollectDue(custId) {
   btn.disabled = true;
   btn.textContent = 'প্রক্রিয়াকরণ হচ্ছে...';
 
+  // ✅ ধাপ ০.১.২: paymentId এখানেই জেনারেট — অফলাইন queue হলে এই ID-ই
+  // idempotency-key হিসেবে কাজ করবে sync-time-এ
+  const paymentId = 'PAY-' + Date.now();
+
   try {
-    const res = await apiCollectCustomerDue(custId, cust.due, cust.totalPaid || 0, amount, note, cust);
+    const res = await apiCollectCustomerDue(paymentId, custId, amount, note, cust);
     if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'গ্রহণ করুন'; return; }
 
-    applyCustomerDueChange(custId, -amount, amount);
-    APP_STATE.payments.push({
-      paymentId: 'PAY-' + Date.now(), date: todayStr(), customerId: custId,
-      customerName: cust.name, amount, note: note || 'বাকি আদায়',
-    });
+    if (res.queued) {
+      // ✅ অফলাইন — sale/purchase-এর প্যাটার্ন অনুসরণ করে local state এখনই
+      // বদলানো হচ্ছে না, sync সফল হলে applySyncedCustomerDue() এটা করবে
+      toast(res.message, 'w');
+      refreshSyncBadge();
+    } else {
+      applyCustomerDueChange(custId, -amount, amount);
+      APP_STATE.payments.push({ paymentId, date: todayStr(), customerId: custId, customerName: cust.name, amount, note: note || 'বাকি আদায়' });
+      toast(res.message, 's');
+    }
 
-    toast(res.message, 's');
     closeCollectDue();
     renderCustTable();
   } catch (err) {
