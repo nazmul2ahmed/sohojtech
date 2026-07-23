@@ -187,22 +187,22 @@ function renderPurItems() {
         </div>
         <div class="col-span-3 md:col-span-1">
           <label class="block text-[11px] text-slate-400 mb-1">Qty</label>
-          <input type="number" id="pur-qty-${i}" value="${item.qty}" min="1" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})"
+          <input type="number" id="pur-qty-${i}" value="${item.qty}" min="1" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})" onblur="onPurFieldBlur(${i})"
             class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
         <div class="col-span-3 md:col-span-2">
           <label class="block text-[11px] text-slate-400 mb-1">ক্রয় মূল্য</label>
-          <input type="number" id="pur-price-${i}" value="${item.purchasePrice}" min="0" step="0.01" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})"
+          <input type="number" id="pur-price-${i}" value="${item.purchasePrice}" min="0" step="0.01" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})" onblur="onPurFieldBlur(${i})"
             class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
         <div class="col-span-3 md:col-span-1">
           <label class="block text-[11px] text-slate-400 mb-1">MRP</label>
-          <input type="number" id="pur-mrp-${i}" value="${item.mrp}" min="0" step="0.01" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})"
+          <input type="number" id="pur-mrp-${i}" value="${item.mrp}" min="0" step="0.01" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})" onblur="onPurFieldBlur(${i})"
             class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
         <div class="col-span-3 md:col-span-2">
           <label class="block text-[11px] text-slate-400 mb-1">বিক্রয় মূল্য</label>
-          <input type="number" id="pur-sell-${i}" value="${item.sellPrice}" min="0" step="0.01" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})"
+          <input type="number" id="pur-sell-${i}" value="${item.sellPrice}" min="0" step="0.01" onkeydown="onPurFieldKeydown(event,${i})" oninput="onPurFieldChange(${i})" onblur="onPurFieldBlur(${i})"
             class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
         <div class="col-span-6 md:col-span-1">
@@ -274,13 +274,33 @@ function applyMedicineToPurItem(i, med) {
 }
 
 function onPurFieldChange(i) {
-  APP_STATE.purItems[i].qty = parseFloat(document.getElementById(`pur-qty-${i}`).value) || 0;
-  APP_STATE.purItems[i].purchasePrice = parseFloat(document.getElementById(`pur-price-${i}`).value) || 0;
-  APP_STATE.purItems[i].mrp = parseFloat(document.getElementById(`pur-mrp-${i}`).value) || 0;
-  APP_STATE.purItems[i].sellPrice = parseFloat(document.getElementById(`pur-sell-${i}`).value) || 0;
+  // ✅ ধাপ ০.২: qty/purchasePrice/mrp/sellPrice সবই >= 0 বাধ্যতামূলক
+  const qty = Math.max(0, parseFloat(document.getElementById(`pur-qty-${i}`).value) || 0);
+  const purchasePrice = Math.max(0, parseFloat(document.getElementById(`pur-price-${i}`).value) || 0);
+  const mrp = Math.max(0, parseFloat(document.getElementById(`pur-mrp-${i}`).value) || 0);
+  const sellPrice = Math.max(0, parseFloat(document.getElementById(`pur-sell-${i}`).value) || 0);
+
+  APP_STATE.purItems[i].qty = qty;
+  APP_STATE.purItems[i].purchasePrice = purchasePrice;
+  APP_STATE.purItems[i].mrp = mrp;
+  APP_STATE.purItems[i].sellPrice = sellPrice;
   APP_STATE.purItems[i].expiryDate = document.getElementById(`pur-exp-${i}`).value || '';
   updatePurLineTotal(i);
   calcPurTotal();
+}
+
+// ✅ ধাপ ০.২: blur-sync (pos.js-এর একই প্যাটার্ন)
+function onPurFieldBlur(i) {
+  const item = APP_STATE.purItems[i];
+  if (!item) return;
+  const qtyEl = document.getElementById(`pur-qty-${i}`);
+  const priceEl = document.getElementById(`pur-price-${i}`);
+  const mrpEl = document.getElementById(`pur-mrp-${i}`);
+  const sellEl = document.getElementById(`pur-sell-${i}`);
+  if (qtyEl) qtyEl.value = item.qty;
+  if (priceEl) priceEl.value = item.purchasePrice;
+  if (mrpEl) mrpEl.value = item.mrp;
+  if (sellEl) sellEl.value = item.sellPrice;
 }
 
 function updatePurLineTotal(i) {
