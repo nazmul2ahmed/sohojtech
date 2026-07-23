@@ -18,16 +18,31 @@
   window.addEventListener('unhandledrejection', function (e) {
     showFatalError('Promise Error: ' + (e.reason?.message || e.reason));
   });
-  function showFatalError(msg) {
-    let banner = document.getElementById('fatal-error-banner');
-    if (!banner) {
-      banner = document.createElement('div');
-      banner.id = 'fatal-error-banner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fff;padding:14px 18px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:40vh;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4)';
-      document.body.appendChild(banner);
-    }
-    banner.textContent = '❌ এরর: ' + msg;
+  function showFatalError(msg, err) {
+  let banner = document.getElementById('fatal-error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'fatal-error-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fff;padding:14px 18px;font-family:sans-serif;font-size:13px;white-space:pre-wrap;max-height:40vh;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4)';
+    document.body.appendChild(banner);
   }
+  const escMsg = String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const rawDetail = err ? ((err.code ? '[' + err.code + '] ' : '') + (err.message || String(err))) : '';
+
+  banner.innerHTML = '❌ ' + escMsg + (rawDetail ? `
+    <div style="margin-top:8px">
+      <span id="fatal-detail-toggle" style="cursor:pointer;text-decoration:underline;font-size:11px;opacity:.75">টেকনিক্যাল বিস্তারিত দেখুন</span>
+      <div id="fatal-detail-body" style="display:none;font-family:monospace;font-size:11px;opacity:.85;white-space:pre-wrap;margin-top:6px"></div>
+    </div>` : '');
+
+  if (rawDetail) {
+    document.getElementById('fatal-detail-body').textContent = rawDetail;
+    document.getElementById('fatal-detail-toggle').onclick = () => {
+      const body = document.getElementById('fatal-detail-body');
+      body.style.display = body.style.display === 'none' ? 'block' : 'none';
+    };
+  }
+}
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- Tailwind CDN (Phase A baseline) -->
