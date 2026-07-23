@@ -107,15 +107,25 @@ async function apiDeleteCustomer(custId) {
   } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
-async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amount, note, custData) {
-  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+async function apiCollectCustomerDue(paymentId, custId, amount, note, custData, opts = {}) {
+  const isRetry = !!opts.isRetry;
+
+  if (!navigator.onLine) {
+    if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
+    return await queueCustomerDueOffline({ paymentId, custId, amount, note, custData });
+  }
+
   try {
     const custRef = userCol('customers').doc(custId);
-    const paymentId = 'PAY-' + Date.now();
+    const payRef = userCol('payments').doc(paymentId);
 
-    await fbDb.runTransaction(async (tx) => {
-      // ✅ ফিক্স: currentDue প্যারামিটার (client-side stale ডেটা) আর ব্যবহার হচ্ছে না হিসাবে —
-      // transaction-এর ভেতরে fresh read করে সেটা থেকেই ভ্যালিডেশন ও হিসাব হচ্ছে
+    await withTimeout(fbDb.runTransaction(async (tx) => {
+      // ✅ ধাপ ০.১.২: idempotency গার্ড — sale/purchase-এর প্যাটার্ন অনুসরণ করে।
+      // এই paymentId দিয়ে আগেই সফলভাবে লেখা হয়ে থাকলে (sync-retry ডুপ্লিকেট),
+      // চুপচাপ no-op — ডাবল-ডিডাকশন/ডাবল-cash-credit রোধ।
+      const existingPayDoc = await tx.get(payRef);
+      if (existingPayDoc.exists) return;
+
       const custDoc = await tx.get(custRef);
       if (!custDoc.exists) throw new Error('গ্রাহক পাওয়া যায়নি।');
       const c = custDoc.data();
@@ -126,17 +136,21 @@ async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amoun
         throw new Error(`বাকির (৳${fmt(freshDue)}) চেয়ে বেশি নেওয়া যাবে না।`);
       }
 
-      // ✅ ধাপ ৩২.২
       const currentBalance = await readCashBalance(tx);
 
       tx.set(custRef, { id: custId, name: custData.name, phone: custData.phone || '', address: custData.address || '', due: round2(freshDue - amount), totalPaid: round2(freshTotalPaid + amount) }, { merge: true });
-      tx.set(userCol('payments').doc(paymentId), { paymentId, date: todayStr(), customerId: custId, customerName: custData.name, amount, note: note || 'বাকি আদায়' });
-      // ✅ ধাপ ৩২.২: বাকি আদায় = cash বৃদ্ধি
+      tx.set(payRef, { paymentId, date: todayStr(), customerId: custId, customerName: custData.name, amount, note: note || 'বাকি আদায়' });
       applyCashDelta(tx, currentBalance, amount);
-    });
+    }), FIRESTORE_WRITE_TIMEOUT_MS);
 
     return { success: true, message: `৳${fmt(amount)} আদায় হয়েছে।` };
-  } catch (err) { return { success: false, message: humanizeError(err) }; }
+  } catch (err) {
+    if (isConnectivityError(err)) {
+      if (isRetry) return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
+      return await queueCustomerDueOffline({ paymentId, custId, amount, note, custData });
+    }
+    return { success: false, message: humanizeError(err) };
+  }
 }
 const OFFLINE_MSG = 'ইন্টারনেট সংযোগ নেই — এই মুহূর্তে সংরক্ষণ করা যাবে না। সংযোগ ফিরলে আবার চেষ্টা করুন।';
 // ────────────────────────────────────────────────────────────
@@ -177,15 +191,23 @@ async function apiDeleteSupplier(supId) {
   } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
-async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, amount, note, supData) {
-  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+async function apiPaySupplierPayable(paymentId, supId, amount, note, supData, opts = {}) {
+  const isRetry = !!opts.isRetry;
+
+  if (!navigator.onLine) {
+    if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
+    return await queueSupplierPayOffline({ paymentId, supId, amount, note, supData });
+  }
+
   try {
     const supRef = userCol('suppliers').doc(supId);
-    const paymentId = 'SPAY-' + Date.now();
+    const payRef = userCol('supplierPayments').doc(paymentId);
 
-    await fbDb.runTransaction(async (tx) => {
-      // ✅ ফিক্স: currentPayable প্যারামিটার (client-side stale ডেটা) আর ব্যবহার হচ্ছে না
-      // হিসাবে — transaction-এর ভেতরে fresh read করে সেটা থেকেই ভ্যালিডেশন ও হিসাব হচ্ছে
+    await withTimeout(fbDb.runTransaction(async (tx) => {
+      // ✅ ধাপ ০.১.২: idempotency গার্ড
+      const existingPayDoc = await tx.get(payRef);
+      if (existingPayDoc.exists) return;
+
       const supDoc = await tx.get(supRef);
       if (!supDoc.exists) throw new Error('সরবরাহকারী পাওয়া যায়নি।');
       const s = supDoc.data();
@@ -196,17 +218,21 @@ async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, am
         throw new Error(`পাওনার (৳${fmt(freshPayable)}) চেয়ে বেশি দেওয়া যাবে না।`);
       }
 
-      // ✅ ধাপ ৩২.২
       const currentBalance = await readCashBalance(tx);
 
       tx.set(supRef, { id: supId, name: supData.name, phone: supData.phone || '', address: supData.address || '', totalPayable: round2(freshPayable - amount), totalPaid: round2(freshTotalPaid + amount) }, { merge: true });
-      tx.set(userCol('supplierPayments').doc(paymentId), { paymentId, date: todayStr(), supplierId: supId, supplierName: supData.name, amount, note: note || 'পাওনা পরিশোধ' });
-      // ✅ ধাপ ৩২.২: সরবরাহকারী পরিশোধ = cash হ্রাস
+      tx.set(payRef, { paymentId, date: todayStr(), supplierId: supId, supplierName: supData.name, amount, note: note || 'পাওনা পরিশোধ' });
       applyCashDelta(tx, currentBalance, -amount);
-    });
+    }), FIRESTORE_WRITE_TIMEOUT_MS);
 
     return { success: true, message: `৳${fmt(amount)} পরিশোধ করা হয়েছে।` };
-  } catch (err) { return { success: false, message: humanizeError(err) }; }
+  } catch (err) {
+    if (isConnectivityError(err)) {
+      if (isRetry) return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
+      return await queueSupplierPayOffline({ paymentId, supId, amount, note, supData });
+    }
+    return { success: false, message: humanizeError(err) };
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -267,6 +293,32 @@ async function queuePurchaseOffline(purchase) {
   }
 }
 
+async function queueCustomerDueOffline(payload) {
+  try {
+    await queueWrite({ type: 'customerDue', payload });
+    return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — বাকি আদায় নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+  } catch (err) {
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
+  }
+}
+
+async function queueSupplierPayOffline(payload) {
+  try {
+    await queueWrite({ type: 'supplierPay', payload });
+    return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — পাওনা পরিশোধ নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+  } catch (err) {
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
+  }
+}
+
+async function queueExpenseOffline(exp) {
+  try {
+    await queueWrite({ type: 'expense', payload: exp });
+    return { success: true, queued: true, message: `অফলাইনে সংরক্ষিত হয়েছে — খরচ নেট ফিরলে স্বয়ংক্রিয় সিঙ্ক হবে।` };
+  } catch (err) {
+    return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
+  }
+}
 // ────────────────────────────────────────────────────────────
 // SALE (POS)
 // ────────────────────────────────────────────────────────────
@@ -908,19 +960,33 @@ async function apiGetBalanceSheet() {
 // ────────────────────────────────────────────────────────────
 // EXPENSE / SETTINGS / OPENING BALANCE
 // ────────────────────────────────────────────────────────────
-async function apiAddExpense(exp) {
-  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+async function apiAddExpense(exp, opts = {}) {
+  const isRetry = !!opts.isRetry;
+
+  if (!navigator.onLine) {
+    if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
+    return await queueExpenseOffline(exp);
+  }
+
   try {
     const expRef = userCol('expenses').doc(exp.id);
-    await fbDb.runTransaction(async (tx) => {
-      // ✅ সব read আগে
+    await withTimeout(fbDb.runTransaction(async (tx) => {
+      // ✅ ধাপ ০.১.২: idempotency গার্ড
+      const existingExpDoc = await tx.get(expRef);
+      if (existingExpDoc.exists) return;
+
       const currentBalance = await readCashBalance(tx);
-      // ✅ সব write পরে
       tx.set(expRef, exp);
-      applyCashDelta(tx, currentBalance, -(exp.amount || 0)); // খরচ = cash কমে
-    });
+      applyCashDelta(tx, currentBalance, -(exp.amount || 0));
+    }), FIRESTORE_WRITE_TIMEOUT_MS);
     return { success: true };
-  } catch (err) { return { success: false, message: humanizeError(err) }; }
+  } catch (err) {
+    if (isConnectivityError(err)) {
+      if (isRetry) return { success: false, message: 'নেট সংযোগ অস্থির — একটু পর আবার চেষ্টা হবে।' };
+      return await queueExpenseOffline(exp);
+    }
+    return { success: false, message: humanizeError(err) };
+  }
 }
 
 async function apiDeleteExpense(expId) {
