@@ -60,6 +60,23 @@ function renderSettingsModule() {
         </div>
 
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-sack-dollar text-brand"></i> নগদ ব্যালান্স</h5>
+          <p class="text-[11px] text-slate-400 mb-3">ধাপ ৩২ থেকে প্রতিটা নগদ-প্রভাবিত লেনদেন স্বয়ংক্রিয়ভাবে ট্র্যাক হয়। প্রথমবার ব্যবহারের আগে নিচে আপনার হাতে/ব্যাংকে থাকা প্রকৃত নগদ পরিমাণ (physical count) বসিয়ে শুরুর পয়েন্ট সেট করুন।</p>
+          <div class="mb-3">
+            <span class="text-[11px] text-slate-400 block mb-1">বর্তমান হিসাবকৃত ব্যালান্স</span>
+            <div id="settings-cash-balance" class="text-lg">
+              <span class="w-2 h-2 rounded-full bg-slate-300 animate-pulse inline-block"></span>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <input type="number" id="cash-balance-input" placeholder="প্রকৃত নগদ পরিমাণ" min="0" step="0.01"
+              class="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+            <button id="cash-balance-save-btn" onclick="saveCashBalanceManual()" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg whitespace-nowrap">সেট করুন</button>
+          </div>
+          <p class="text-[11px] text-amber-600 mt-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>এটা বর্তমান হিসাবকৃত ব্যালান্সকে সম্পূর্ণ ওভাররাইট করবে — শুধু প্রথমবার শুরুর পয়েন্ট সেট করতে বা bookkeeping reconciliation-এর জন্য ব্যবহার করুন।</p>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-file-export text-brand mr-1"></i> ডেটা এক্সপোর্ট</h5>
           <button onclick="exportToExcel()" class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm mb-2">
             <i class="fa-solid fa-download mr-1"></i> Excel-এ ডাউনলোড করুন
@@ -93,6 +110,7 @@ function renderSettingsModule() {
 
   updateSettingsDbStatusCard();
   refreshSettingsSyncStatusCard();
+  refreshCashBalanceCard();
 }
 
 // ✅ ধাপ ২২: আগে হার্ডকোডেড "Firestore সংযুক্ত" (সবুজ, সবসময়) দেখাত —
@@ -136,6 +154,50 @@ async function refreshSettingsSyncStatusCard() {
   } catch (err) {
     box.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-300"></span> স্ট্যাটাস লোড করা যায়নি`;
     box.className = 'flex items-center gap-2 text-xs text-slate-400';
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ৩২.৪: CASH BALANCE CARD — বর্তমান হিসাবকৃত ব্যালান্স দেখায়
+// ────────────────────────────────────────────────────────────
+async function refreshCashBalanceCard() {
+  const box = document.getElementById('settings-cash-balance');
+  if (!box) return;
+  try {
+    const res = await apiGetCashBalance();
+    if (!document.getElementById('settings-cash-balance')) return; // ট্যাব বদলে গেলে safe no-op
+    if (!res.success) {
+      box.innerHTML = `<span class="text-xs text-slate-400">লোড করা যায়নি</span>`;
+      return;
+    }
+    const bal = res.cashBalance;
+    box.innerHTML = `<span class="font-mono font-extrabold ${bal >= 0 ? 'text-emerald-600' : 'text-red-600'}">${bal < 0 ? '−' : ''}৳${fmt(Math.abs(bal))}</span>`;
+  } catch (err) {
+    box.innerHTML = `<span class="text-xs text-slate-400">লোড ব্যর্থ</span>`;
+  }
+}
+
+async function saveCashBalanceManual() {
+  if (guardReadOnly()) return;
+  const input = document.getElementById('cash-balance-input');
+  const amount = parseFloat(input.value);
+  if (isNaN(amount) || amount < 0) { toast('সঠিক (০ বা তার বেশি) পরিমাণ দিন।', 'w'); return; }
+  if (!confirm(`নগদ ব্যালান্স ৳${fmt(amount)}-এ সেট করতে চান? এটা বর্তমান হিসাবকৃত ব্যালান্সের ওপর সম্পূর্ণ ওভাররাইট হবে।`)) return;
+
+  const btn = document.getElementById('cash-balance-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'সংরক্ষণ হচ্ছে...';
+  try {
+    const res = await apiSetCashBalance(amount);
+    if (!res.success) { toast(res.message, 'w'); btn.disabled = false; btn.textContent = 'সেট করুন'; return; }
+    toast('নগদ ব্যালান্স সেট করা হয়েছে।', 's');
+    input.value = '';
+    refreshCashBalanceCard();
+  } catch (err) {
+    showFatalError('নগদ ব্যালান্স সেট করতে সমস্যা:\n' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'সেট করুন';
   }
 }
 
