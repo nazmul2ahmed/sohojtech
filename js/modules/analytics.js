@@ -241,7 +241,7 @@ async function loadOlderHistory() {
     toast('পুরনো হিস্টোরি লোড হয়েছে।', 's');
     renderAnalyticsModule();
   } catch (err) {
-    showFatalError('পুরনো হিস্টোরি লোডে সমস্যা:\n' + err.message);
+    showFatalError('পুরনো হিস্টোরি লোডে সমস্যা:\n' + humanizeError(err), err);
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> ১২ মাসের আগের হিস্টোরি লোড করুন'; }
   }
 }
@@ -274,7 +274,7 @@ async function loadFiscalPeriodData() {
     statusEl.textContent = `সর্বশেষ লোড: ${range.fromDate} — ${range.toDate}`;
     renderAnaBody();
   } catch (err) {
-    showFatalError('মেয়াদের ডেটা লোডে সমস্যা:\n' + err.message);
+    showFatalError('মেয়াদের ডেটা লোডে সমস্যা:\n' + humanizeError(err), err);
     statusEl.textContent = 'লোড ব্যর্থ হয়েছে।';
   } finally {
     btn.disabled = false;
@@ -324,7 +324,7 @@ async function ensurePeriodDataLoaded(fromDate, toDate) {
     if (APP_STATE.currentTab === 'analytics') renderAnaBody();
     return true;
   } catch (err) {
-    showFatalError('মেয়াদের ডেটা অটো-লোডে সমস্যা:\n' + err.message);
+    showFatalError('মেয়াদের ডেটা অটো-লোডে সমস্যা:\n' + humanizeError(err), err);
     return false;
   }
 }
