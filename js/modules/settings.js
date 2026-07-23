@@ -310,6 +310,7 @@ async function confirmReset() {
     }
     APP_STATE.pendingSales = [];
     APP_STATE.pendingPurchases = [];
+    APP_STATE.pendingReturns = [];
     document.getElementById('sync-status-badge')?.remove();
 
     document.getElementById('reset-modal').remove();
