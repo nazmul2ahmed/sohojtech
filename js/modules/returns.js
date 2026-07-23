@@ -37,7 +37,12 @@ function updateRetTabsUI() {
 }
 
 function returnedQty(refId, medId, type) {
-  return APP_STATE.returns.filter(r => r.returnType === type && r.refId === refId)
+  const synced = APP_STATE.returns.filter(r => r.returnType === type && r.refId === refId);
+  // ✅ ফিক্স (ধাপ ০.১.৩): queue হওয়া কিন্তু এখনো sync-না-হওয়া রিটার্নও এই
+  // cap-হিসাবে ধরা হচ্ছে — নাহলে অফলাইনে দুইবার আংশিক রিটার্ন করলে দ্বিতীয়বার
+  // ভুল (বেশি) maxQty দেখিয়ে over-return অনুমোদন করে ফেলতে পারত।
+  const pending = (APP_STATE.pendingReturns || []).filter(r => r.returnType === type && r.refId === refId);
+  return [...synced, ...pending]
     .flatMap(r => r.items).filter(i => i.medId === medId).reduce((a, b) => a + b.qty, 0);
 }
 
