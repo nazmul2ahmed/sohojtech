@@ -124,3 +124,43 @@ function resolveMedicineMatch(query, list, textFn) {
 function clamp(val, min, max) {
   return Math.min(max, Math.max(min, val));
 }
+
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ০.৩: NETWORK ERROR CODES — single source of truth।
+// api-client.js-এর isConnectivityError() ও এই ফাইলের humanizeError()
+// দুটোই এই একই লিস্ট ব্যবহার করে — duplicate maintenance এড়াতে।
+// ════════════════════════════════════════════════════════════
+const NETWORK_ERROR_CODES = [
+  'unavailable', 'deadline-exceeded', 'cancelled', 'internal',
+  'unknown', 'aborted', 'resource-exhausted', 'client-timeout',
+];
+
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ০.৩: RAW ERROR → USER-FRIENDLY বাংলা মেসেজ
+// - Firestore/network error code থাকলে → পরিচিত বাংলা বার্তা
+// - err.code নেই কিন্তু err.message বাংলায় → এটা আমাদের নিজের
+//   throw new Error('বাংলা মেসেজ') — ইতিমধ্যে user-friendly, pass-through
+// - বাকি সব (genuine JS bug, unexpected error) → generic fallback,
+//   raw detail শুধু showFatalError()-এর collapsible অংশে যাবে
+// ════════════════════════════════════════════════════════════
+function humanizeError(err) {
+  const code = err?.code || '';
+
+  const codeMap = {
+    'permission-denied': 'অনুমতি নেই — সম্ভবত আপনার অ্যাকাউন্ট স্ট্যাটাস পরিবর্তিত হয়েছে। পেজ রিফ্রেশ করে আবার চেষ্টা করুন।',
+    'not-found': 'তথ্যটি খুঁজে পাওয়া যায়নি — সম্ভবত অন্য কোথাও থেকে ইতিমধ্যে মুছে ফেলা হয়েছে।',
+    'already-exists': 'এই তথ্য ইতিমধ্যে বিদ্যমান।',
+    'unauthenticated': 'সেশনের মেয়াদ শেষ — আবার লগইন করুন।',
+    'invalid-argument': 'পাঠানো তথ্যে সমস্যা আছে — আবার চেষ্টা করুন, সমস্যা থাকলে ফর্মটা যাচাই করুন।',
+  };
+  if (codeMap[code]) return codeMap[code];
+  if (NETWORK_ERROR_CODES.includes(code)) {
+    return 'সার্ভারের সাথে সংযোগে সমস্যা হয়েছে — একটু পর আবার চেষ্টা করুন।';
+  }
+
+  const msg = err?.message || '';
+  const isBengaliMsg = /[\u0980-\u09FF]/.test(msg); // আমাদের নিজের throw new Error('...') শনাক্ত করতে
+  if (isBengaliMsg) return msg;
+
+  return 'একটা অপ্রত্যাশিত সমস্যা হয়েছে। সমস্যা থেকে গেলে অ্যাপ রিফ্রেশ করুন বা যোগাযোগ করুন।';
+}
