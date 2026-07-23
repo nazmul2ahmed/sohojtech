@@ -126,8 +126,13 @@ async function apiCollectCustomerDue(custId, currentDue, currentTotalPaid, amoun
         throw new Error(`বাকির (৳${fmt(freshDue)}) চেয়ে বেশি নেওয়া যাবে না।`);
       }
 
+      // ✅ ধাপ ৩২.২
+      const currentBalance = await readCashBalance(tx);
+
       tx.set(custRef, { id: custId, name: custData.name, phone: custData.phone || '', address: custData.address || '', due: round2(freshDue - amount), totalPaid: round2(freshTotalPaid + amount) }, { merge: true });
       tx.set(userCol('payments').doc(paymentId), { paymentId, date: todayStr(), customerId: custId, customerName: custData.name, amount, note: note || 'বাকি আদায়' });
+      // ✅ ধাপ ৩২.২: বাকি আদায় = cash বৃদ্ধি
+      applyCashDelta(tx, currentBalance, amount);
     });
 
     return { success: true, message: `৳${fmt(amount)} আদায় হয়েছে।` };
@@ -191,8 +196,13 @@ async function apiPaySupplierPayable(supId, currentPayable, currentTotalPaid, am
         throw new Error(`পাওনার (৳${fmt(freshPayable)}) চেয়ে বেশি দেওয়া যাবে না।`);
       }
 
+      // ✅ ধাপ ৩২.২
+      const currentBalance = await readCashBalance(tx);
+
       tx.set(supRef, { id: supId, name: supData.name, phone: supData.phone || '', address: supData.address || '', totalPayable: round2(freshPayable - amount), totalPaid: round2(freshTotalPaid + amount) }, { merge: true });
       tx.set(userCol('supplierPayments').doc(paymentId), { paymentId, date: todayStr(), supplierId: supId, supplierName: supData.name, amount, note: note || 'পাওনা পরিশোধ' });
+      // ✅ ধাপ ৩২.২: সরবরাহকারী পরিশোধ = cash হ্রাস
+      applyCashDelta(tx, currentBalance, -amount);
     });
 
     return { success: true, message: `৳${fmt(amount)} পরিশোধ করা হয়েছে।` };
@@ -328,8 +338,12 @@ async function apiSubmitSale(sale, opts = {}) {
 
       if (existingSaleDoc.exists) {
         // ইতিমধ্যে সফলভাবে সংরক্ষিত — নিরাপদে no-op, ডাবল-ডিডাকশন রোধ
+        // (কোনো write হচ্ছে না, তাই cash balance-ও স্পর্শ করা হচ্ছে না)
         return;
       }
+
+      // ✅ ধাপ ৩২.২: cash balance read — write-এর আগে
+      const currentBalance = await readCashBalance(tx);
 
       const invUpdates = [];
       for (let i = 0; i < sale.items.length; i++) {
@@ -374,6 +388,8 @@ async function apiSubmitSale(sale, opts = {}) {
       tx.set(saleRef, sale);
       invUpdates.forEach(u => tx.update(u.ref, u.fields));
       if (custRef && custUpdate) tx.update(custRef, custUpdate);
+      // ✅ ধাপ ৩২.২: নগদ বিক্রয় = cash বৃদ্ধি
+      applyCashDelta(tx, currentBalance, sale.cashPaid || 0);
     }), FIRESTORE_WRITE_TIMEOUT_MS);
 
     return { success: true, message: `বিক্রয় সফল! Invoice: ${sale.invoiceNo}` };
@@ -399,6 +415,8 @@ async function apiDeleteSale(sale) {
     await fbDb.runTransaction(async (tx) => {
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const custDoc = custRef ? await tx.get(custRef) : null;
+      // ✅ ধাপ ৩২.২
+      const currentBalance = await readCashBalance(tx);
 
       const invMap = {};
       uniqueMedIds.forEach((id, i) => { invMap[id] = { ref: invRefs[i], data: invDocs[i].exists ? { ...invDocs[i].data() } : null, medId: id }; });
@@ -433,6 +451,8 @@ async function apiDeleteSale(sale) {
         }, { merge: true });
       });
       if (custRef && custFields) tx.update(custRef, custFields);
+      // ✅ ধাপ ৩২.২: বিক্রয় ডিলিট = cash হ্রাস (আগে যোগ হওয়া নগদ ফেরত)
+      applyCashDelta(tx, currentBalance, -(sale.cashPaid || 0));
     });
 
     return { success: true, message: 'বিক্রয় মুছে ফেলা হয়েছে, স্টক/বাকি ফেরত হয়েছে।' };
@@ -464,9 +484,12 @@ async function apiSubmitPurchase(purchase, opts = {}) {
       const supDoc = await tx.get(supRef);
 
       if (existingPurDoc.exists) {
-        // ইতিমধ্যে সফলভাবে সংরক্ষিত — no-op
+        // ইতিমধ্যে সফলভাবে সংরক্ষিত — no-op (কোনো write না, cash-ও অপরিবর্তিত)
         return;
       }
+
+      // ✅ ধাপ ৩২.২
+      const currentBalance = await readCashBalance(tx);
 
       const invUpdates = purchase.items.map((item, idx) => {
         const invDoc = invDocs[idx];
@@ -502,6 +525,8 @@ async function apiSubmitPurchase(purchase, opts = {}) {
       tx.set(purRef, purchase);
       invUpdates.forEach(u => { if (u.exists) tx.update(u.ref, u.fields); else tx.set(u.ref, u.fields); });
       if (supUpdate) tx.update(supRef, supUpdate);
+      // ✅ ধাপ ৩২.২: শুধু নগদ ক্রয় হলেই cash কমে, বাকি ক্রয়ে cash অপরিবর্তিত
+      if (purchase.paymentType === 'নগদ') applyCashDelta(tx, currentBalance, -purchase.totalCost);
     }), FIRESTORE_WRITE_TIMEOUT_MS);
 
     return { success: true, message: `ক্রয় রেকর্ড হয়েছে! Invoice: ${purchase.purchaseId}` };
@@ -526,6 +551,8 @@ async function apiDeletePurchase(purchase) {
       // ✅ সব read আগে
       const invDocs = await Promise.all(invRefs.map(r => tx.get(r)));
       const supDoc = await tx.get(supRef);
+      // ✅ ধাপ ৩২.২
+      const currentBalance = await readCashBalance(tx);
 
       const invUpdates = purchase.items.map((item, idx) => {
         const invDoc = invDocs[idx]; if (!invDoc.exists) return null;
@@ -558,6 +585,8 @@ async function apiDeletePurchase(purchase) {
       tx.delete(userCol('purchases').doc(purchase.purchaseId));
       invUpdates.forEach(u => tx.update(u.ref, u.fields));
       if (supFields) tx.update(supRef, supFields);
+      // ✅ ধাপ ৩২.২: নগদ ক্রয় ডিলিট = cash ফেরত
+      if (purchase.paymentType === 'নগদ') applyCashDelta(tx, currentBalance, purchase.totalCost);
     });
 
     return { success: true, message: 'ক্রয় মুছে ফেলা হয়েছে, স্টক/পাওনা ফেরত হয়েছে।' };
