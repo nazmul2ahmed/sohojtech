@@ -165,7 +165,7 @@ async function submitOpeningEntry() {
     toast('Opening এন্ট্রি সংরক্ষিত হয়েছে!', 's');
     clearObForm();
     renderObTable();
-  } catch (err) { showFatalError('Opening এন্ট্রি সংরক্ষণে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('Opening এন্ট্রি সংরক্ষণে সমস্যা:\n' + humanizeError(err), err); }
 }
 
 function clearObForm() {
@@ -258,5 +258,5 @@ async function deleteOpeningEntry(entryId) {
     APP_STATE.openingEntries = APP_STATE.openingEntries.filter(e => e.entryId !== entryId);
     toast('এন্ট্রি মুছে ফেলা হয়েছে।', 's');
     renderObTable();
-  } catch (err) { showFatalError('এন্ট্রি মুছতে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('এন্ট্রি মুছতে সমস্যা:\n' + humanizeError(err), err); }
 }
