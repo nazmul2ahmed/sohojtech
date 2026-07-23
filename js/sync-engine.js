@@ -71,9 +71,6 @@ function getSyncTypeRegistry() {
   return {
     sale: { apiFn: apiSubmitSale, applyFn: applySyncedSale },
     purchase: { apiFn: apiSubmitPurchase, applyFn: applySyncedPurchase },
-    // ✅ ধাপ ০.১.২: adapter — payload অবজেক্ট থেকে apiXxx()-এর পজিশনাল
-    // প্যারামিটারে ম্যাপ করা হচ্ছে, যেহেতু এই তিনটার signature sale/purchase-এর
-    // মতো "পুরো payload-ই প্রথম আর্গুমেন্ট" প্যাটার্ন মানে না।
     customerDue: {
       apiFn: (payload, opts) => apiCollectCustomerDue(payload.paymentId, payload.custId, payload.amount, payload.note, payload.custData, opts),
       applyFn: applySyncedCustomerDue,
@@ -83,8 +80,16 @@ function getSyncTypeRegistry() {
       applyFn: applySyncedSupplierPay,
     },
     expense: { apiFn: apiAddExpense, applyFn: applySyncedExpense },
-    // ✅ ধাপ ০.১.৩-০.১.৪-এ এখানে নতুন এন্ট্রি যোগ হবে:
-    // medicineAdd, customerAdd, supplierAdd, customerReturn, supplierReturn
+    // ✅ ধাপ ০.১.৩
+    customerReturn: {
+      apiFn: (payload, opts) => apiSubmitCustomerReturn(payload.returnDoc, payload.custId, payload.custDueReduction, opts),
+      applyFn: applySyncedCustomerReturn,
+    },
+    supplierReturn: {
+      apiFn: (payload, opts) => apiSubmitSupplierReturn(payload.returnDoc, payload.supId, payload.supPayableReduction, opts),
+      applyFn: applySyncedSupplierReturn,
+    },
+    // ✅ ধাপ ০.১.৪-এ এখানে নতুন এন্ট্রি যোগ হবে: medicineAdd, customerAdd, supplierAdd
   };
 }
 
@@ -189,6 +194,31 @@ function applySyncedExpense(entry) {
   if (APP_STATE.currentTab === 'accounts') renderLedgerTable();
 }
 
+function applySyncedCustomerReturn(entry) {
+  const { returnDoc, custId, custDueReduction } = entry.payload;
+  returnDoc.items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
+  if (custDueReduction > 0) applyCustomerDueChange(custId, -custDueReduction, 0);
+  APP_STATE.returns.push(returnDoc);
+  toast(`রিটার্ন ${returnDoc.returnId} সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'returns') { renderRetForm(); renderTodayReturns(); }
+}
+
+function applySyncedSupplierReturn(entry) {
+  const { returnDoc, supId, supPayableReduction } = entry.payload;
+  returnDoc.items.forEach(item => {
+    if (item.batchId) {
+      const res = destockByBatchId(item.medId, item.batchId, item.qty);
+      if (!res.success) console.warn('Local mirror destock সমস্যা:', res.message);
+    } else {
+      destockItem(item.medId, item.qty);
+    }
+  });
+  if (supPayableReduction > 0) applySupplierPayableChange(supId, -supPayableReduction, 0);
+  APP_STATE.returns.push(returnDoc);
+  toast(`রিটার্ন ${returnDoc.returnId} সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'returns') { renderRetForm(); renderTodayReturns(); }
+}
+
 // ✅ পুরনো ফাংশন-নাম রাখা হলো যদি অন্য কোথাও রেফারেন্স থাকে (এখন dead হওয়া উচিত,
 // কিন্তু নিরাপদে রাখা হলো — ০.১.২-এর পর সম্পূর্ণ সরানো যাবে)
 function applySyncedEntryToState(entry) {
@@ -258,6 +288,8 @@ function syncEntryLabel(e) {
     customerDue: () => `বাকি আদায় ${esc(e.payload.custData.name)} — ৳${fmt(e.payload.amount)}`,
     supplierPay: () => `পাওনা পরিশোধ ${esc(e.payload.supData.name)} — ৳${fmt(e.payload.amount)}`,
     expense: () => `খরচ ${esc(e.payload.description)} — ৳${fmt(e.payload.amount)}`,
+    customerReturn: () => `কাস্টমার রিটার্ন ${esc(e.payload.returnDoc.refId)} — ৳${fmt(e.payload.returnDoc.amount)}`,
+    supplierReturn: () => `সাপ্লায়ার রিটার্ন ${esc(e.payload.returnDoc.refId)} — ৳${fmt(e.payload.returnDoc.amount)}`,
   };
   return labels[e.type] ? labels[e.type]() : `${esc(e.type)} এন্ট্রি`;
 }
