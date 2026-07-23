@@ -187,8 +187,14 @@ async function saveSupplier(supId) {
       const id = genSupplierId();
       const res = await apiAddSupplier({ id, name, phone, address });
       if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
-      APP_STATE.suppliers.push({ id, name, phone, address, totalPayable: 0, totalPaid: 0 });
-      toast(`"${name}" যোগ হয়েছে।`, 's');
+
+      if (res.queued) {
+        toast(res.message, 'w');
+        refreshSyncBadge();
+      } else {
+        APP_STATE.suppliers.push({ id, name, phone, address, totalPayable: 0, totalPaid: 0 });
+        toast(`"${name}" যোগ হয়েছে।`, 's');
+      }
     }
     closeSupplierForm();
     renderSupTable();
