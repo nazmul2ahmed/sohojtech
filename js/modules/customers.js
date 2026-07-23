@@ -198,7 +198,7 @@ async function saveCustomer(custId) {
       initPOSCustomerDropdown();
     }
   } catch (err) {
-    showFatalError('গ্রাহক সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('গ্রাহক সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.textContent = 'সংরক্ষণ করুন';
   }
@@ -224,7 +224,7 @@ async function deleteCustomerConfirm(custId) {
     toast('গ্রাহক মুছে ফেলা হয়েছে।', 's');
     renderCustTable();
   } catch (err) {
-    showFatalError('গ্রাহক মুছতে সমস্যা:\n' + err.message);
+    showFatalError('গ্রাহক মুছতে সমস্যা:\n' + humanizeError(err), err);
   }
 }
 
@@ -299,7 +299,7 @@ async function saveCollectDue(custId) {
     closeCollectDue();
     renderCustTable();
   } catch (err) {
-    showFatalError('বাকি আদায়ে সমস্যা:\n' + err.message);
+    showFatalError('বাকি আদায়ে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.textContent = 'গ্রহণ করুন';
   }
