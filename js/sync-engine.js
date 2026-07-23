@@ -80,7 +80,6 @@ function getSyncTypeRegistry() {
       applyFn: applySyncedSupplierPay,
     },
     expense: { apiFn: apiAddExpense, applyFn: applySyncedExpense },
-    // ✅ ধাপ ০.১.৩
     customerReturn: {
       apiFn: (payload, opts) => apiSubmitCustomerReturn(payload.returnDoc, payload.custId, payload.custDueReduction, opts),
       applyFn: applySyncedCustomerReturn,
@@ -89,7 +88,10 @@ function getSyncTypeRegistry() {
       apiFn: (payload, opts) => apiSubmitSupplierReturn(payload.returnDoc, payload.supId, payload.supPayableReduction, opts),
       applyFn: applySyncedSupplierReturn,
     },
-    // ✅ ধাপ ০.১.৪-এ এখানে নতুন এন্ট্রি যোগ হবে: medicineAdd, customerAdd, supplierAdd
+    // ✅ ধাপ ০.১.৪
+    medicineAdd: { apiFn: apiAddMedicine, applyFn: applySyncedMedicineAdd },
+    customerAdd: { apiFn: apiAddCustomer, applyFn: applySyncedCustomerAdd },
+    supplierAdd: { apiFn: apiAddSupplier, applyFn: applySyncedSupplierAdd },
   };
 }
 
@@ -224,6 +226,38 @@ function applySyncedSupplierReturn(entry) {
   if (APP_STATE.currentTab === 'returns') { renderRetForm(); renderTodayReturns(); }
 }
 
+function applySyncedMedicineAdd(entry) {
+  const data = entry.payload;
+  const invRow = {
+    medId: data.id, brand: data.brand, doseForm: data.doseForm || '', strength: data.strength || '',
+    totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [],
+  };
+  APP_STATE.medicines.push({
+    id: data.id, brand: data.brand, generic: data.generic || '', doseForm: data.doseForm || '',
+    strength: data.strength || '', manufacturer: data.manufacturer || '', category: data.category || '',
+    unit: data.unit || 'পাতা', reorderLevel: parseInt(data.reorderLevel) || 10,
+  });
+  APP_STATE.inventory.push(invRow);
+  toast(`"${data.brand}" সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'medicine') renderMedTable();
+}
+
+function applySyncedCustomerAdd(entry) {
+  const data = entry.payload;
+  APP_STATE.customers.push({ id: data.id, name: data.name, phone: data.phone || '', address: data.address || '', due: 0, totalPaid: 0 });
+  toast(`"${data.name}" গ্রাহক সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'customers') renderCustTable();
+  if (typeof initPOSCustomerDropdown === 'function' && document.getElementById('sd-pos-customer')) initPOSCustomerDropdown();
+}
+
+function applySyncedSupplierAdd(entry) {
+  const data = entry.payload;
+  APP_STATE.suppliers.push({ id: data.id, name: data.name, phone: data.phone || '', address: data.address || '', totalPayable: 0, totalPaid: 0 });
+  toast(`"${data.name}" সরবরাহকারী সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'suppliers') renderSupTable();
+  if (typeof initPurSupplierDropdown === 'function' && document.getElementById('sd-pur-supplier')) initPurSupplierDropdown();
+}
+
 // ✅ পুরনো ফাংশন-নাম রাখা হলো যদি অন্য কোথাও রেফারেন্স থাকে (এখন dead হওয়া উচিত,
 // কিন্তু নিরাপদে রাখা হলো — ০.১.২-এর পর সম্পূর্ণ সরানো যাবে)
 function applySyncedEntryToState(entry) {
@@ -286,6 +320,7 @@ async function openSyncPanel() {
 
 // ✅ ধাপ ০.১.১: renderSyncPanelList()-এর label-নির্ণয় লজিক আলাদা ফাংশনে —
 // নতুন টাইপ যোগ হলে শুধু নিচের labels অবজেক্টে entry বাড়ালেই চলবে
+
 function syncEntryLabel(e) {
   const labels = {
     sale: () => `বিক্রয় ${esc(e.payload.invoiceNo)} — ৳${fmt(e.payload.totalBill)}`,
@@ -295,6 +330,9 @@ function syncEntryLabel(e) {
     expense: () => `খরচ ${esc(e.payload.description)} — ৳${fmt(e.payload.amount)}`,
     customerReturn: () => `কাস্টমার রিটার্ন ${esc(e.payload.returnDoc.refId)} — ৳${fmt(e.payload.returnDoc.amount)}`,
     supplierReturn: () => `সাপ্লায়ার রিটার্ন ${esc(e.payload.returnDoc.refId)} — ৳${fmt(e.payload.returnDoc.amount)}`,
+    medicineAdd: () => `নতুন ওষুধ ${esc(e.payload.brand)}`,
+    customerAdd: () => `নতুন গ্রাহক ${esc(e.payload.name)}`,
+    supplierAdd: () => `নতুন সরবরাহকারী ${esc(e.payload.name)}`,
   };
   return labels[e.type] ? labels[e.type]() : `${esc(e.type)} এন্ট্রি`;
 }
