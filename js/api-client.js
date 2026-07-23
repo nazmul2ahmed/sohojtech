@@ -337,6 +337,7 @@ async function queueSupplierReturnOffline(payload) {
     return { success: false, message: 'অফলাইন সংরক্ষণেও ব্যর্থ: ' + humanizeError(err) };
   }
 }
+
 // ────────────────────────────────────────────────────────────
 // SALE (POS)
 // ────────────────────────────────────────────────────────────
@@ -810,36 +811,6 @@ async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction, op
     }
     return { success: false, message: humanizeError(err) };
   }
-}
-
-      // ✅ সব write পরে
-      tx.set(userCol('returns').doc(returnDoc.returnId), returnDoc);
-      Object.values(invMap).forEach(e => {
-        if (!e.data) return;
-        // ✅ ফিক্স (ধাপ ২৩): status/nearestExpiry এখন সঠিকভাবে রিক্যালকুলেট
-        const med = APP_STATE.medicines.find(m => m.id === e.medId);
-        const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
-        const derived = computeInventoryDerivedFields(e.data.batches, reorderLevel);
-        tx.set(e.ref, {
-          ...e.data,
-          batches: derived.batches,
-          totalStock: derived.totalStock,
-          costValue: derived.costValue,
-          mrpValue: derived.mrpValue,
-          nearestExpiry: derived.nearestExpiry,
-          status: derived.status,
-        }, { merge: true });
-      });
-      if (supRef && supFields) tx.update(supRef, supFields);
-      // ✅ ধাপ ৩২.৩: শুধু reason==='ফেরত' && refundMethod==='নগদ ফেরত' হলেই cash বাড়ে
-      // ('ধ্বংস' write-off বা 'পাওনা সমন্বয়' হলে cash অপরিবর্তিত)
-      if (returnDoc.reason === 'ফেরত' && returnDoc.refundMethod === 'নগদ ফেরত') {
-        applyCashDelta(tx, currentBalance, returnDoc.amount);
-      }
-    });
-
-    return { success: true, message: returnDoc.reason === 'ধ্বংস' ? 'মেয়াদোত্তীর্ণ পণ্য রাইট-অফ হয়েছে!' : 'সাপ্লায়ার রিটার্ন সফল!' };
-  } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiDeleteReturn(ret) {
