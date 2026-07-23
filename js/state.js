@@ -11,6 +11,7 @@ const APP_STATE = {
   sidebarOpen: false,
   currentUser: null,
   isAdmin: false,
+  subscriptionStatusInfo: null, // ✅ নতুন — auth.js-এর applyUserProfile() সেট করে, contact.js পড়ে
 
   // Business data (এখনো খালি — পরের ধাপে Mock Data দিয়ে পূরণ হবে)
   pharmacyName: 'ফার্মেসি',
@@ -89,6 +90,13 @@ const NAV_CONFIG = [
     ],
   },
   {
+    // ✅ নতুন সেকশন — সব ইউজার (read-only সহ) সবসময় দেখবে, কোনো গেটিং নেই
+    section: 'সহায়তা',
+    items: [
+      { id: 'contact', label: 'যোগাযোগ ও সাবস্ক্রিপশন', icon: 'fa-headset' },
+    ],
+  },
+  {
     section: 'প্রশাসন',
     items: [
       { id: 'admin', label: 'ইউজার ম্যানেজমেন্ট', icon: 'fa-user-shield' },
@@ -108,7 +116,6 @@ const NAV_CONFIG = [
   },
 ];
 
-// দ্রুত lookup-এর জন্য ফ্ল্যাট ম্যাপ (id → label), header title বসাতে ব্যবহৃত হবে
 const TAB_TITLES = NAV_CONFIG
   .flatMap(section => section.items)
   .reduce((map, item) => { map[item.id] = item.label; return map; }, {});
