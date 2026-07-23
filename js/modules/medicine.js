@@ -246,12 +246,16 @@ async function saveMedicine(medId) {
       const res = await apiAddMedicine({ id, brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel });
       if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
 
-      const invRow = { medId: id, brand, doseForm, strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] };
-      await apiSetInventoryRow(id, invRow);
-
-      APP_STATE.medicines.push({ id, brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel });
-      APP_STATE.inventory.push(invRow);
-      toast(`"${brand}" যোগ হয়েছে। এখন Purchase থেকে স্টক যোগ করুন।`, 's');
+      if (res.queued) {
+        // ✅ ধাপ ০.১.৪: অফলাইন — medicine + inventory দুটোই sync-এর পরই APP_STATE-এ আসবে
+        toast(res.message, 'w');
+        refreshSyncBadge();
+      } else {
+        const invRow = { medId: id, brand, doseForm, strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] };
+        APP_STATE.medicines.push({ id, brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel });
+        APP_STATE.inventory.push(invRow);
+        toast(`"${brand}" যোগ হয়েছে। এখন Purchase থেকে স্টক যোগ করুন।`, 's');
+      }
     }
     closeMedicineForm();
     renderMedTable();
