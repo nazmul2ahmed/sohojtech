@@ -422,7 +422,7 @@ async function submitPurchase() {
     btn.disabled = false;
     btn.innerHTML = idleHTML;
   } catch (err) {
-    showFatalError('ক্রয় সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('ক্রয় সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.innerHTML = idleHTML;
   }
@@ -523,5 +523,5 @@ async function deletePurchaseConfirm(purchaseId) {
     APP_STATE.purchases = APP_STATE.purchases.filter(p => p.purchaseId !== purchaseId);
     toast(res.message, 's');
     renderTodayPurchases();
-  } catch (err) { showFatalError('ক্রয় মুছতে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('ক্রয় মুছতে সমস্যা:\n' + humanizeError(err), err); }
 }
