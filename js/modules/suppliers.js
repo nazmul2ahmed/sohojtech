@@ -196,7 +196,7 @@ async function saveSupplier(supId) {
       initPurSupplierDropdown();
     }
   } catch (err) {
-    showFatalError('সরবরাহকারী সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('সরবরাহকারী সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.textContent = 'সংরক্ষণ করুন';
   }
@@ -222,7 +222,7 @@ async function deleteSupplierConfirm(supId) {
     toast('সরবরাহকারী মুছে ফেলা হয়েছে।', 's');
     renderSupTable();
   } catch (err) {
-    showFatalError('সরবরাহকারী মুছতে সমস্যা:\n' + err.message);
+    showFatalError('সরবরাহকারী মুছতে সমস্যা:\n' + humanizeError(err), err);
   }
 }
 
@@ -297,7 +297,7 @@ async function savePayPayable(supId) {
     closePayPayable();
     renderSupTable();
   } catch (err) {
-    showFatalError('পাওনা পরিশোধে সমস্যা:\n' + err.message);
+    showFatalError('পাওনা পরিশোধে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.textContent = 'পরিশোধ করুন';
   }
