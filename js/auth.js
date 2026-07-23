@@ -99,24 +99,30 @@ function applyUserProfile(user, profile) {
   APP_STATE.currentUser = profile;
   APP_STATE.isAdmin = profile.email === APP_CONFIG.ADMIN_EMAIL;
 
+  let statusInfo;
   if (profile.status === 'approved') {
     const subDays = subscriptionDaysLeft(profile);
     if (subDays === Infinity || subDays > 0) {
       APP_STATE.readOnly = false;
-      unlockApp(profile, { mode: 'approved', subDaysLeft: subDays === Infinity ? null : subDays });
+      statusInfo = { mode: 'approved', subDaysLeft: subDays === Infinity ? null : subDays };
     } else {
       APP_STATE.readOnly = true;
-      unlockApp(profile, { mode: 'subscription-expired' });
+      statusInfo = { mode: 'subscription-expired' };
     }
   } else if (profile.status === 'revoked') {
     APP_STATE.readOnly = true;
-    unlockApp(profile, { mode: 'revoked' });
+    statusInfo = { mode: 'revoked' };
   } else {
     const daysLeft = trialDaysLeft(profile);
-    if (daysLeft > 0) { APP_STATE.readOnly = false; unlockApp(profile, { mode: 'trial', daysLeft }); }
-    else { APP_STATE.readOnly = true; unlockApp(profile, { mode: 'trial-expired' }); }
+    if (daysLeft > 0) { APP_STATE.readOnly = false; statusInfo = { mode: 'trial', daysLeft }; }
+    else { APP_STATE.readOnly = true; statusInfo = { mode: 'trial-expired' }; }
   }
+
+  // ✅ নতুন — contact.js (ও ভবিষ্যতে অন্য মডিউল) কোনো recompute ছাড়াই এটা পড়তে পারবে
+  APP_STATE.subscriptionStatusInfo = statusInfo;
+  unlockApp(profile, statusInfo);
 }
+
 function unlockApp(profile, statusInfo) {
   showAuthScreen(null);
   renderUserBadge(profile, statusInfo);
