@@ -228,7 +228,7 @@ async function submitExpenseEntry() {
     toast('খরচ যোগ হয়েছে।', 's');
     toggleExpenseForm();
     renderLedgerTable();
-  } catch (err) { showFatalError('খরচ সংরক্ষণে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('খরচ সংরক্ষণে সমস্যা:\n' + humanizeError(err), err); }
 }
 
 async function deleteExpenseEntry(expId) {
@@ -240,5 +240,5 @@ async function deleteExpenseEntry(expId) {
     APP_STATE.expenses = APP_STATE.expenses.filter(e => e.id !== expId);
     toast('খরচ মুছে ফেলা হয়েছে।', 's');
     renderLedgerTable();
-  } catch (err) { showFatalError('খরচ মুছতে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('খরচ মুছতে সমস্যা:\n' + humanizeError(err), err); }
 }
