@@ -158,7 +158,6 @@ async function submitCustomerReturn(invoiceNo) {
     items.push({
       medId: item.medId, name: item.name, qty, price: item.price,
       discountPct: item.discountPct, costPrice: item.costPrice,
-      // ✅ সংশোধন: already-returned অফসেট বাদ দিয়ে সঠিক consumedBatches অংশ (আগের বার্তায় ভুলে বাদ পড়েছিল)
       consumedBatches: extractConsumedBatchPortion(item.consumedBatches, already, qty),
     });
   }
@@ -179,8 +178,9 @@ async function submitCustomerReturn(invoiceNo) {
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> প্রক্রিয়াকরণ হচ্ছে...';
 
+  const custDueReduction = method === 'বাকি সমন্বয়' ? amount : 0;
+
   try {
-    const custDueReduction = method === 'বাকি সমন্বয়' ? amount : 0;
     const res = await apiSubmitCustomerReturn(returnDoc, sale.customerId, custDueReduction);
     if (!res.success) {
       showRetError(res.message);
@@ -189,14 +189,19 @@ async function submitCustomerReturn(invoiceNo) {
       return;
     }
 
-    // ✅ সংশোধন: item.consumedBatches পাস করা হচ্ছে — সঠিক ব্যাচে স্টক ফেরত
-    items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
-    if (method === 'বাকি সমন্বয়') applyCustomerDueChange(sale.customerId, -amount, 0);
-    APP_STATE.returns.push(returnDoc);
+    if (res.queued) {
+      toast(res.message, 'w');
+      refreshSyncBadge();
+      openReceiptModal('return', returnDoc); // ✅ অফলাইনেও কাউন্টারে ফিজিক্যাল রিসিট লাগে
+    } else {
+      items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
+      if (method === 'বাকি সমন্বয়') applyCustomerDueChange(sale.customerId, -amount, 0);
+      APP_STATE.returns.push(returnDoc);
+      toast(res.message, 's');
+      openReceiptModal('return', returnDoc);
+    }
 
-    toast(res.message, 's');
     renderRetForm(); renderTodayReturns();
-    openReceiptModal('return', returnDoc); // ✅ ধাপ ৩০
   } catch (err) {
     showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
@@ -284,15 +289,11 @@ async function submitSupplierReturn(purId) {
     if (qty <= 0) continue;
     const alreadyOnThisPurchase = returnedQty(purId, item.medId, 'supplier');
     const purchaseCap = item.qty - alreadyOnThisPurchase;
-    // ✅ ধাপ ২৬ ফিক্স: UI hint-এর মতোই এখন validation-ও batch-specific stock cap
-    // ব্যবহার করছে — আগে এখানে totalStock ছিল, যা UI-তে দেখানো সীমার সাথে
-    // mismatch তৈরি করত (batch stock কম কিন্তু totalStock বেশি হলে ভুল লিমিট
-    // দেখাতো, বা এরর মেসেজ ভুল সংখ্যা বলত)।
     const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
     const hasBatchTracking = !!item.batchId;
     const currentStock = hasBatchTracking
       ? (inv?.batches.find(b => b.batchId === item.batchId)?.stock || 0)
-      : (inv?.totalStock || 0); // legacy fallback অক্ষত
+      : (inv?.totalStock || 0);
     const allowedMax = Math.max(0, Math.min(purchaseCap, currentStock));
     if (qty > allowedMax) {
       if (currentStock < purchaseCap) {
@@ -302,7 +303,6 @@ async function submitSupplierReturn(purId) {
       return showRetError(`"${item.brand}" ফেরতযোগ্য সীমা অতিক্রম করেছে।`);
     }
     amount += qty * item.purchasePrice;
-    // ✅ ধাপ ২৬: batchId এখন item-এর সাথে পাস হচ্ছে — precise destock/restock-এর জন্য
     items.push({ medId: item.medId, name: item.brand, qty, purchasePrice: item.purchasePrice, batchId: item.batchId || null });
   }
   if (!items.length) return showRetError('কমপক্ষে একটি ওষুধের পরিমাণ দিন।');
@@ -318,8 +318,9 @@ async function submitSupplierReturn(purId) {
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> প্রক্রিয়াকরণ হচ্ছে...';
 
+  const supPayableReduction = (reason === 'ফেরত' && method === 'পাওনা সমন্বয়') ? amount : 0;
+
   try {
-    const supPayableReduction = (reason === 'ফেরত' && method === 'পাওনা সমন্বয়') ? amount : 0;
     const res = await apiSubmitSupplierReturn(returnDoc, pur.supplierId, supPayableReduction);
     if (!res.success) {
       showRetError(res.message);
@@ -328,20 +329,26 @@ async function submitSupplierReturn(purId) {
       return;
     }
 
-    items.forEach(item => {
-      if (item.batchId) {
-        const res = destockByBatchId(item.medId, item.batchId, item.qty);
-        if (!res.success) console.warn('Local mirror destock সমস্যা:', res.message);
-      } else {
-        destockItem(item.medId, item.qty);
-      }
-    });
-    if (supPayableReduction > 0) applySupplierPayableChange(pur.supplierId, -amount, 0);
-    APP_STATE.returns.push(returnDoc);
+    if (res.queued) {
+      toast(res.message, 'w');
+      refreshSyncBadge();
+      openReceiptModal('return', returnDoc);
+    } else {
+      items.forEach(item => {
+        if (item.batchId) {
+          const dres = destockByBatchId(item.medId, item.batchId, item.qty);
+          if (!dres.success) console.warn('Local mirror destock সমস্যা:', dres.message);
+        } else {
+          destockItem(item.medId, item.qty);
+        }
+      });
+      if (supPayableReduction > 0) applySupplierPayableChange(pur.supplierId, -amount, 0);
+      APP_STATE.returns.push(returnDoc);
+      toast(res.message, 's');
+      openReceiptModal('return', returnDoc);
+    }
 
-    toast(res.message, 's');
     renderRetForm(); renderTodayReturns();
-    openReceiptModal('return', returnDoc);
   } catch (err) {
     showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
