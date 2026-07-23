@@ -64,8 +64,28 @@ function isPermanentlyFailed(entry) {
   return entry.status === 'failed' && (entry.attempts || 0) >= MAX_AUTO_RETRY_ATTEMPTS;
 }
 
+// ✅ ধাপ ০.১.১: getSyncTypeApiMap() এখন বহু-টাইপ সাপোর্ট করে — প্রতিটা এন্ট্রি
+// { apiFn, applyFn } আকারে, যাতে API কল ও state-apply লজিক এক জায়গায় bound থাকে
+// (আগে apiFn এখানে ছিল, applyFn আলাদা if/else চেইনে — এখন dispatch-object-এ একত্রিত)
+function getSyncTypeRegistry() {
+  return {
+    sale: { apiFn: apiSubmitSale, applyFn: applySyncedSale },
+    purchase: { apiFn: apiSubmitPurchase, applyFn: applySyncedPurchase },
+    // ✅ ধাপ ০.১.২-০.১.৪-এ এখানে নতুন এন্ট্রি যোগ হবে:
+    // medicineAdd, medicineUpdate, medicineDelete,
+    // customerAdd, customerUpdate, customerDelete,
+    // supplierAdd, supplierUpdate, supplierDelete,
+    // customerDue, supplierPay, customerReturn, supplierReturn
+  };
+}
+
+// ✅ ব্যাকওয়ার্ড-কম্প্যাটিবিলিটি — পুরনো নাম এখনো কল হতে পারে অন্য কোথাও থেকে,
+// কিন্তু এখন থেকে নতুন কোড getSyncTypeRegistry() ব্যবহার করবে
 function getSyncTypeApiMap() {
-  return { sale: apiSubmitSale, purchase: apiSubmitPurchase };
+  const registry = getSyncTypeRegistry();
+  const map = {};
+  Object.keys(registry).forEach(k => { map[k] = registry[k].apiFn; });
+  return map;
 }
 
 async function processPendingQueue() {
@@ -89,50 +109,59 @@ async function processPendingQueue() {
 
 async function attemptSync(entry) {
   await markSyncing(entry.tempId);
-  const apiFn = getSyncTypeApiMap()[entry.type];
-  if (!apiFn) { await markFailed(entry.tempId, 'অজানা এন্ট্রি টাইপ: ' + entry.type); return; }
+  const typeInfo = getSyncTypeRegistry()[entry.type];
+  if (!typeInfo) { await markFailed(entry.tempId, 'অজানা এন্ট্রি টাইপ: ' + entry.type); return; }
 
   try {
     // ✅ ফিক্স: isRetry:true পাঠানো হচ্ছে — এই কল sync-queue থেকে retry,
     // তাই connectivity ব্যর্থ হলে apiSubmitSale/apiSubmitPurchase আবার
     // queue করবে না (duplicate entry এড়াতে), শুধু failed রিটার্ন করবে —
     // যেটা নিচে markFailed()-এ যাবে, পরের অটো-সাইকেলে আবার চেষ্টা হবে।
-    const res = await apiFn(entry.payload, { isRetry: true });
+    const res = await typeInfo.apiFn(entry.payload, { isRetry: true });
     if (res.success) {
-      applySyncedEntryToState(entry);
+      typeInfo.applyFn(entry); // ✅ dispatch — প্রতিটা টাইপের নিজস্ব state-apply লজিক
       await removePendingWrite(entry.tempId);
     } else {
       await markFailed(entry.tempId, res.message || 'সিঙ্ক ব্যর্থ');
     }
   } catch (err) {
-    await markFailed(entry.tempId, err.message || 'অজানা সমস্যা');
+    // ⚠️ NOTE: humanizeError() এই ফাইলে define করা নেই — অন্য ফাইলে
+    // সংজ্ঞায়িত আছে কিনা কনফার্ম করা দরকার, নাহলে এই লাইনে রানটাইম এরর হবে।
+    await markFailed(entry.tempId, humanizeError(err));
   }
 }
 
-// ✅ সিঙ্ক সফল হলে এখানেই APP_STATE আপডেট হয় — ঠিক অনলাইন-মোডে
-// pos.js/purchase.js যেভাবে করে, সেই একই লজিক এক জায়গায়
-function applySyncedEntryToState(entry) {
-  if (entry.type === 'sale') {
-    const sale = entry.payload;
-    sale.items.forEach(item => deductStockFEFO(item.medId, item.qty));
-    if (sale.customerId !== 'WALK_IN') applyCustomerDueChange(sale.customerId, sale.due, sale.cashPaid);
-    APP_STATE.sales.push(sale);
-    APP_STATE.pendingSales = (APP_STATE.pendingSales || []).filter(s => s.invoiceNo !== sale.invoiceNo);
-    toast(`Invoice ${sale.invoiceNo} সিঙ্ক হয়েছে।`, 's');
-    if (APP_STATE.currentTab === 'pos') renderTodayPOSSales();
-  } else if (entry.type === 'purchase') {
-    const purchase = entry.payload;
-    purchase.items.forEach(item => addPurchaseBatch(item, purchase.date));
-    const supplier = APP_STATE.suppliers.find(s => s.id === purchase.supplierId);
-    if (supplier) {
-      if (purchase.paymentType === 'বাকি') applySupplierPayableChange(purchase.supplierId, purchase.totalCost, 0);
-      else applySupplierPayableChange(purchase.supplierId, 0, purchase.totalCost);
-    }
-    APP_STATE.purchases.push(purchase);
-    APP_STATE.pendingPurchases = (APP_STATE.pendingPurchases || []).filter(p => p.purchaseId !== purchase.purchaseId);
-    toast(`Purchase ${purchase.purchaseId} সিঙ্ক হয়েছে।`, 's');
-    if (APP_STATE.currentTab === 'purchase') renderTodayPurchases();
+// ✅ ধাপ ০.১.১: আগে applySyncedEntryToState()-এর একটাই if/else ব্লকে ছিল,
+// এখন প্রতিটা টাইপের নিজস্ব ফাংশন — getSyncTypeRegistry()-এর applyFn হিসেবে bound
+function applySyncedSale(entry) {
+  const sale = entry.payload;
+  sale.items.forEach(item => deductStockFEFO(item.medId, item.qty));
+  if (sale.customerId !== 'WALK_IN') applyCustomerDueChange(sale.customerId, sale.due, sale.cashPaid);
+  APP_STATE.sales.push(sale);
+  APP_STATE.pendingSales = (APP_STATE.pendingSales || []).filter(s => s.invoiceNo !== sale.invoiceNo);
+  toast(`Invoice ${sale.invoiceNo} সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'pos') renderTodayPOSSales();
+}
+
+function applySyncedPurchase(entry) {
+  const purchase = entry.payload;
+  purchase.items.forEach(item => addPurchaseBatch(item, purchase.date));
+  const supplier = APP_STATE.suppliers.find(s => s.id === purchase.supplierId);
+  if (supplier) {
+    if (purchase.paymentType === 'বাকি') applySupplierPayableChange(purchase.supplierId, purchase.totalCost, 0);
+    else applySupplierPayableChange(purchase.supplierId, 0, purchase.totalCost);
   }
+  APP_STATE.purchases.push(purchase);
+  APP_STATE.pendingPurchases = (APP_STATE.pendingPurchases || []).filter(p => p.purchaseId !== purchase.purchaseId);
+  toast(`Purchase ${purchase.purchaseId} সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'purchase') renderTodayPurchases();
+}
+
+// ✅ পুরনো ফাংশন-নাম রাখা হলো যদি অন্য কোথাও রেফারেন্স থাকে (এখন dead হওয়া উচিত,
+// কিন্তু নিরাপদে রাখা হলো — ০.১.২-এর পর সম্পূর্ণ সরানো যাবে)
+function applySyncedEntryToState(entry) {
+  if (entry.type === 'sale') applySyncedSale(entry);
+  else if (entry.type === 'purchase') applySyncedPurchase(entry);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -188,14 +217,23 @@ async function openSyncPanel() {
   });
 }
 
+// ✅ ধাপ ০.১.১: renderSyncPanelList()-এর label-নির্ণয় লজিক আলাদা ফাংশনে —
+// নতুন টাইপ যোগ হলে শুধু নিচের labels অবজেক্টে entry বাড়ালেই চলবে
+function syncEntryLabel(e) {
+  const labels = {
+    sale: () => `বিক্রয় ${esc(e.payload.invoiceNo)} — ৳${fmt(e.payload.totalBill)}`,
+    purchase: () => `ক্রয় ${esc(e.payload.purchaseId)} — ৳${fmt(e.payload.totalCost)}`,
+  };
+  return labels[e.type] ? labels[e.type]() : `${esc(e.type)} এন্ট্রি`;
+}
+
 function renderSyncPanelList(entries) {
   const box = document.getElementById('sync-panel-list');
   if (!box) return;
   if (!entries.length) { box.innerHTML = `<div class="text-center text-sm text-slate-400 py-6">কোনো পেন্ডিং এন্ট্রি নেই।</div>`; return; }
 
   box.innerHTML = entries.map(e => {
-    const label = e.type === 'sale' ? `বিক্রয় ${esc(e.payload.invoiceNo)} — ৳${fmt(e.payload.totalBill)}`
-      : `ক্রয় ${esc(e.payload.purchaseId)} — ৳${fmt(e.payload.totalCost)}`;
+    const label = syncEntryLabel(e);
     const permanentlyFailed = isPermanentlyFailed(e);
     const statusBadge = permanentlyFailed
       ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">স্থায়ী ব্যর্থ — ম্যানুয়াল প্রয়োজন</span>`
