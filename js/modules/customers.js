@@ -189,8 +189,14 @@ async function saveCustomer(custId) {
       const id = genCustomerId();
       const res = await apiAddCustomer({ id, name, phone, address });
       if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
-      APP_STATE.customers.push({ id, name, phone, address, due: 0, totalPaid: 0 });
-      toast(`"${name}" নিবন্ধিত হয়েছে।`, 's');
+
+      if (res.queued) {
+        toast(res.message, 'w');
+        refreshSyncBadge();
+      } else {
+        APP_STATE.customers.push({ id, name, phone, address, due: 0, totalPaid: 0 });
+        toast(`"${name}" নিবন্ধিত হয়েছে।`, 's');
+      }
     }
     closeCustomerForm();
     renderCustTable();
