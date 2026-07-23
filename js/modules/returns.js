@@ -198,7 +198,7 @@ async function submitCustomerReturn(invoiceNo) {
     renderRetForm(); renderTodayReturns();
     openReceiptModal('return', returnDoc); // ✅ ধাপ ৩০
   } catch (err) {
-    showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.textContent = 'রিটার্ন নিশ্চিত করুন';
   }
@@ -343,7 +343,7 @@ async function submitSupplierReturn(purId) {
     renderRetForm(); renderTodayReturns();
     openReceiptModal('return', returnDoc);
   } catch (err) {
-    showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.textContent = 'রিটার্ন/রাইট-অফ নিশ্চিত করুন';
   }
@@ -399,5 +399,5 @@ async function deleteReturnConfirm(returnId) {
     APP_STATE.returns = APP_STATE.returns.filter(r => r.returnId !== returnId);
     toast(res.message, 's');
     renderTodayReturns();
-  } catch (err) { showFatalError('রিটার্ন মুছতে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('রিটার্ন মুছতে সমস্যা:\n' + humanizeError(err), err); }
 }
