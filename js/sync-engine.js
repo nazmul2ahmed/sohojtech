@@ -71,11 +71,20 @@ function getSyncTypeRegistry() {
   return {
     sale: { apiFn: apiSubmitSale, applyFn: applySyncedSale },
     purchase: { apiFn: apiSubmitPurchase, applyFn: applySyncedPurchase },
-    // ✅ ধাপ ০.১.২-০.১.৪-এ এখানে নতুন এন্ট্রি যোগ হবে:
-    // medicineAdd, medicineUpdate, medicineDelete,
-    // customerAdd, customerUpdate, customerDelete,
-    // supplierAdd, supplierUpdate, supplierDelete,
-    // customerDue, supplierPay, customerReturn, supplierReturn
+    // ✅ ধাপ ০.১.২: adapter — payload অবজেক্ট থেকে apiXxx()-এর পজিশনাল
+    // প্যারামিটারে ম্যাপ করা হচ্ছে, যেহেতু এই তিনটার signature sale/purchase-এর
+    // মতো "পুরো payload-ই প্রথম আর্গুমেন্ট" প্যাটার্ন মানে না।
+    customerDue: {
+      apiFn: (payload, opts) => apiCollectCustomerDue(payload.paymentId, payload.custId, payload.amount, payload.note, payload.custData, opts),
+      applyFn: applySyncedCustomerDue,
+    },
+    supplierPay: {
+      apiFn: (payload, opts) => apiPaySupplierPayable(payload.paymentId, payload.supId, payload.amount, payload.note, payload.supData, opts),
+      applyFn: applySyncedSupplierPay,
+    },
+    expense: { apiFn: apiAddExpense, applyFn: applySyncedExpense },
+    // ✅ ধাপ ০.১.৩-০.১.৪-এ এখানে নতুন এন্ট্রি যোগ হবে:
+    // medicineAdd, customerAdd, supplierAdd, customerReturn, supplierReturn
   };
 }
 
@@ -157,6 +166,29 @@ function applySyncedPurchase(entry) {
   if (APP_STATE.currentTab === 'purchase') renderTodayPurchases();
 }
 
+function applySyncedCustomerDue(entry) {
+  const { custId, amount, note, custData, paymentId } = entry.payload;
+  applyCustomerDueChange(custId, -amount, amount);
+  APP_STATE.payments.push({ paymentId, date: todayStr(), customerId: custId, customerName: custData.name, amount, note: note || 'বাকি আদায়' });
+  toast(`${custData.name} — ৳${fmt(amount)} বাকি আদায় সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'customers') renderCustTable();
+}
+
+function applySyncedSupplierPay(entry) {
+  const { supId, amount, note, supData, paymentId } = entry.payload;
+  applySupplierPayableChange(supId, -amount, amount);
+  APP_STATE.supplierPayments.push({ paymentId, date: todayStr(), supplierId: supId, supplierName: supData.name, amount, note: note || 'পাওনা পরিশোধ' });
+  toast(`${supData.name} — ৳${fmt(amount)} পরিশোধ সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'suppliers') renderSupTable();
+}
+
+function applySyncedExpense(entry) {
+  const exp = entry.payload;
+  APP_STATE.expenses.push(exp);
+  toast(`খরচ "${exp.description}" সিঙ্ক হয়েছে।`, 's');
+  if (APP_STATE.currentTab === 'accounts') renderLedgerTable();
+}
+
 // ✅ পুরনো ফাংশন-নাম রাখা হলো যদি অন্য কোথাও রেফারেন্স থাকে (এখন dead হওয়া উচিত,
 // কিন্তু নিরাপদে রাখা হলো — ০.১.২-এর পর সম্পূর্ণ সরানো যাবে)
 function applySyncedEntryToState(entry) {
@@ -223,6 +255,9 @@ function syncEntryLabel(e) {
   const labels = {
     sale: () => `বিক্রয় ${esc(e.payload.invoiceNo)} — ৳${fmt(e.payload.totalBill)}`,
     purchase: () => `ক্রয় ${esc(e.payload.purchaseId)} — ৳${fmt(e.payload.totalCost)}`,
+    customerDue: () => `বাকি আদায় ${esc(e.payload.custData.name)} — ৳${fmt(e.payload.amount)}`,
+    supplierPay: () => `পাওনা পরিশোধ ${esc(e.payload.supData.name)} — ৳${fmt(e.payload.amount)}`,
+    expense: () => `খরচ ${esc(e.payload.description)} — ৳${fmt(e.payload.amount)}`,
   };
   return labels[e.type] ? labels[e.type]() : `${esc(e.type)} এন্ট্রি`;
 }
