@@ -429,7 +429,7 @@ async function submitPOSSale() {
     btn.disabled = false;
     btn.innerHTML = idleHTML;
   } catch (err) {
-    showFatalError('বিক্রয় সংরক্ষণে সমস্যা:\n' + err.message);
+    showFatalError('বিক্রয় সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
     btn.innerHTML = idleHTML;
   }
@@ -531,5 +531,5 @@ async function deleteSaleConfirm(invoiceNo) {
     APP_STATE.sales = APP_STATE.sales.filter(s => s.invoiceNo !== invoiceNo);
     toast(res.message, 's');
     renderTodayPOSSales();
-  } catch (err) { showFatalError('বিক্রয় মুছতে সমস্যা:\n' + err.message); }
+  } catch (err) { showFatalError('বিক্রয় মুছতে সমস্যা:\n' + humanizeError(err), err); }
 }
