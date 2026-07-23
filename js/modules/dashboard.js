@@ -120,6 +120,21 @@ function renderDashboardModule() {
       </div>
     </div>
 
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-5">
+      <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2">
+        <i class="fa-solid fa-scale-unbalanced text-brand"></i> ব্যালান্স শিট (স্ন্যাপশট)
+      </h5>
+      <p class="text-[11px] text-slate-400 mb-4">নগদ ব্যালান্স (ধাপ ৩২ থেকে প্রতিটা লেনদেনে ট্র্যাক করা) + স্টক/বাকি/পাওনার বর্তমান অবস্থা — সম্পূর্ণ ইতিহাস sum করা হয় না, তাই বড় অ্যাকাউন্টেও দ্রুত ও নির্ভুল থাকে</p>
+      <div id="balance-sheet-body" class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        ${Array(5).fill(0).map(() => `
+          <div class="text-center p-2">
+            <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 animate-pulse mx-auto mb-1.5"></div>
+            <div class="h-4 w-16 bg-slate-100 dark:bg-slate-700 animate-pulse rounded mx-auto mb-1"></div>
+            <div class="h-3 w-14 bg-slate-100 dark:bg-slate-700 animate-pulse rounded mx-auto"></div>
+          </div>`).join('')}
+      </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
       <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
         <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-scale-balanced text-brand"></i> মুনাফা-ক্ষতি (P&L)</h5>
@@ -224,6 +239,45 @@ function renderDashboardModule() {
       </div>
     </div>
   `;
+
+  refreshBalanceSheetCard(); // ✅ ধাপ ৩২.৫ — progressive load, DOM বসে যাওয়ার পর কল
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ৩২.৫: BALANCE SHEET CARD — async progressive load
+// ────────────────────────────────────────────────────────────
+async function refreshBalanceSheetCard() {
+  const box = document.getElementById('balance-sheet-body');
+  if (!box) return;
+  try {
+    const res = await apiGetBalanceSheet();
+    if (!document.getElementById('balance-sheet-body')) return; // ততক্ষণে ট্যাব বদলে গেলে safe no-op
+
+    if (!res.success) {
+      box.innerHTML = `<div class="col-span-2 lg:col-span-5 text-center text-xs text-slate-400 py-4">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i> লোড করা যায়নি: ${esc(res.message || 'অজানা সমস্যা')}
+      </div>`;
+      return;
+    }
+
+    box.innerHTML = `
+      ${balanceItem('নগদ ব্যালান্স', res.cashBalance, 'fa-sack-dollar', res.cashBalance >= 0 ? 'text-emerald-600' : 'text-red-600')}
+      ${balanceItem('স্টক মূল্য (Cost)', res.stockValue, 'fa-boxes-stacked', 'text-brand')}
+      ${balanceItem('গ্রাহক বাকি (+)', res.customerDue, 'fa-hand-holding-dollar', 'text-amber-600')}
+      ${balanceItem('সরবরাহকারী পাওনা (−)', res.supplierPayable, 'fa-truck-field', 'text-red-500')}
+      ${balanceItem('নিট পজিশন', res.netPosition, 'fa-scale-balanced', res.netPosition >= 0 ? 'text-emerald-600' : 'text-red-600', true)}
+    `;
+  } catch (err) {
+    box.innerHTML = `<div class="col-span-2 lg:col-span-5 text-center text-xs text-slate-400 py-4">লোড ব্যর্থ হয়েছে।</div>`;
+  }
+}
+
+function balanceItem(label, val, icon, colorClass, bold) {
+  return `<div class="text-center p-2">
+    <div class="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-900/30 flex items-center justify-center mx-auto mb-1.5"><i class="fa-solid ${icon} text-xs ${colorClass}"></i></div>
+    <div class="font-mono ${bold ? 'font-extrabold text-base' : 'font-bold text-sm'} ${colorClass}">${val < 0 ? '−' : ''}৳${fmt(Math.abs(val))}</div>
+    <div class="text-[10px] text-slate-400 mt-0.5">${esc(label)}</div>
+  </div>`;
 }
 
 function kpiCard(label, val, sub, icon, color) {
