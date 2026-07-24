@@ -31,12 +31,36 @@ function initAuthGate() {
   }, (err) => showFatalError('Auth স্টেট শোনার সময় সমস্যা:\n' + err.message));
 }
 
+let _conflictInviteChecked = false; // ✅ প্রতি সেশনে একবারই চেক — বারবার query না
+
 function watchUserProfile(user) {
   const ref = fbDb.collection('users').doc(user.uid);
   userDocUnsub = ref.onSnapshot(async (snap) => {
     if (!snap.exists) { await handleFirstLogin(user, ref); return; }
-    handleProfileSnapshot(user, { uid: user.uid, ...snap.data() });
+    const profile = { uid: user.uid, ...snap.data() };
+    // ✅ [Track A] এই ইমেইলে কোনো পেন্ডিং স্টাফ-ইনভাইট আছে কিন্তু অ্যাকাউন্ট
+    // ইতিমধ্যে বিদ্যমান (owner/trial/staff-elsewhere) — silently ignore না
+    // করে স্পষ্ট জানিয়ে দেওয়া হচ্ছে। ডেটা/স্ট্যাটাসে কোনো পরিবর্তন হয় না।
+    if (!_conflictInviteChecked) {
+      _conflictInviteChecked = true;
+      checkConflictingInvite(user);
+    }
+    handleProfileSnapshot(user, profile);
   }, (err) => showFatalError('প্রোফাইল শোনার সময় সমস্যা:\n' + err.message));
+}
+
+async function checkConflictingInvite(user) {
+  try {
+    const emailLower = (user.email || '').toLowerCase();
+    const inviteSnap = await fbDb.collectionGroup('staffInvites')
+      .where('email', '==', emailLower).limit(5).get();
+    const pendingInvite = inviteSnap.docs.find(d => d.data().status === 'pending');
+    if (pendingInvite) {
+      toast('আপনার এই ইমেইলে একটা স্টাফ-ইনভাইট পেন্ডিং আছে, কিন্তু এই Google অ্যাকাউন্টে ইতিমধ্যে নিজস্ব ডেটা/অ্যাক্সেস আছে — তাই স্বয়ংক্রিয়ভাবে যুক্ত হয়নি। যিনি ইনভাইট পাঠিয়েছেন তার সাথে যোগাযোগ করুন, অথবা ভিন্ন Google অ্যাকাউন্ট দিয়ে লগইন করুন।', 'w');
+    }
+  } catch (err) {
+    console.warn('Conflicting invite check ব্যর্থ (নিরাপদে উপেক্ষা করা হলো):', err);
+  }
 }
 
 // ✅ [Track A - A.3] প্রথম লগইন — pending staff invite থাকলে সেটা accept করে
