@@ -1,7 +1,11 @@
 'use strict';
 
 function userCol(name) {
-  return fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection(name);
+  // ✅ [Track A - A.3] owner হলে APP_STATE.tenantUid === নিজের uid,
+  // staff হলে এটা owner-এর uid — এভাবেই staff-এর সব read/write
+  // স্বয়ংক্রিয়ভাবে owner-এর ডেটাতেই যায়, কোনো call site বদলাতে হয়নি।
+  const tenantUid = APP_STATE.tenantUid || APP_STATE.currentUser.uid;
+  return fbDb.collection('users').doc(tenantUid).collection(name);
 }
 
 async function cget(ref) {
