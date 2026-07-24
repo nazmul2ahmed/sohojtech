@@ -106,8 +106,8 @@ async function handleFirstLogin(user, ref) {
     await ref.set(newProfile);
     if (isOwner) await ref.update({ status: 'approved' });
   } catch (err) {
-    showFatalError('প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message);
-  }
+    showFatalError('প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message, err);
+}
 }
 
 // ✅ profile snapshot এলে — staff না owner অনুযায়ী দুই ভিন্ন পথে dispatch
