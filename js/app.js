@@ -137,6 +137,7 @@ function renderShell() {
   updateDarkToggleIcon();
   if (APP_STATE.currentTab === 'admin' && !APP_STATE.isAdmin) APP_STATE.currentTab = 'dashboard';
   if (APP_STATE.currentTab === 'ads' && !APP_STATE.ads.enabled) APP_STATE.currentTab = 'dashboard';
+  if (APP_STATE.currentTab === 'staff' && APP_STATE.isStaffMember) APP_STATE.currentTab = 'dashboard';
   goTab(APP_STATE.currentTab);
   setText('sidebar-pharma-name', APP_STATE.pharmacyName);
 }
@@ -145,7 +146,8 @@ function renderSidebarNav() {
   const nav = document.getElementById('sidebar-nav');
   const sections = NAV_CONFIG.filter(s =>
   (s.section !== 'প্রশাসন' || APP_STATE.isAdmin) &&
-  (s.section !== 'B2B' || APP_STATE.ads.enabled)
+  (s.section !== 'B2B' || APP_STATE.ads.enabled) &&
+  (s.section !== 'টিম' || !APP_STATE.isStaffMember)   // ✅ নতুন — স্টাফ নিজে এই ট্যাব দেখবে না
 );
   nav.innerHTML = sections.map(section => `
     <div>
@@ -278,14 +280,21 @@ function renderTabPanels() {
         <div id="admin-content"></div>
       </div>`;
     }
-    // ১৪. বিজ্ঞাপন/অ্যাফিলিয়েট (Ads) ট্যাব — ধাপ ৮ boilerplate
+    // ১৪. স্টাফ ম্যানেজমেন্ট (Staff) ট্যাব
+    if (item.id === 'staff') {
+      return `<div id="tab-staff" class="tab-panel hidden tab-enter">
+        <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
+        <div id="staff-content"></div>
+      </div>`;
+    }
+    // ১৫. বিজ্ঞাপন/অ্যাফিলিয়েট (Ads) ট্যাব — ধাপ ৮ boilerplate
     if (item.id === 'ads') {
       return `<div id="tab-ads" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
         <div id="ads-content"></div>
       </div>`;
     }
-    // ১৫. যোগাযোগ ও সাবস্ক্রিপশন (Contact) ট্যাব
+    // ১৬. যোগাযোগ ও সাবস্ক্রিপশন (Contact) ট্যাব
     if (item.id === 'contact') {
       return `<div id="tab-contact" class="tab-panel hidden tab-enter">
         <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
@@ -372,6 +381,7 @@ function goTab(tabId, opts = {}) {
     if (tabId === 'admin') { renderAdminModule(); }
     if (tabId === 'ads') { renderAdsModule(); }
     if (tabId === 'contact') { renderContactModule(); }
+    if (tabId === 'staff') { renderStaffModule(); }
   } catch (err) {
     showFatalError('goTab("' + tabId + '") এ সমস্যা:\n' + err.message);
   }
