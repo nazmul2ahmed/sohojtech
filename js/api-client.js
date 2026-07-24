@@ -1557,3 +1557,51 @@ async function apiUpdateBatch(medId, batchId, fields) {
     return { success: false, message: humanizeError(err) };
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// ✅ [Track A - A.2] STAFF MANAGEMENT API — owner নিজের uid দিয়েই কল করে
+// (tenantUid না — owner সবসময় নিজের রোস্টার ম্যানেজ করছেন)
+// ────────────────────────────────────────────────────────────
+async function apiInviteStaff(email, role) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    const ownerUid = APP_STATE.currentUser.uid;
+    const inviteRef = fbDb.collection('users').doc(ownerUid).collection('staffInvites').doc(email);
+    const existing = await inviteRef.get();
+    if (existing.exists) return { success: false, message: 'এই ইমেইলে ইতিমধ্যে একটা পেন্ডিং ইনভাইট আছে।' };
+    await inviteRef.set({ email, role, status: 'pending', invitedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    return { success: true, message: `"${email}"-কে ইনভাইট পাঠানো হয়েছে। তারা Google দিয়ে লগইন করলেই যুক্ত হয়ে যাবে।` };
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
+}
+
+async function apiCancelInvite(email) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    await fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection('staffInvites').doc(email).delete();
+    return { success: true, message: 'ইনভাইট বাতিল করা হয়েছে।' };
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
+}
+
+async function apiUpdateStaffRole(staffUid, newRole) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    await fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection('staff').doc(staffUid).update({ role: newRole });
+    return { success: true, message: 'Role পরিবর্তন করা হয়েছে।' };
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
+}
+
+async function apiSetStaffStatus(staffUid, newStatus) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    await fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection('staff').doc(staffUid).update({ status: newStatus });
+    return { success: true, message: newStatus === 'active' ? 'স্টাফ সক্রিয় করা হয়েছে।' : 'স্টাফ নিষ্ক্রিয় করা হয়েছে — অ্যাক্সেস সাথে সাথে বন্ধ হবে।' };
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
+}
+
+async function apiRemoveStaff(staffUid) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    await fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection('staff').doc(staffUid).delete();
+    return { success: true, message: 'স্টাফ সরানো হয়েছে।' };
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
+}
