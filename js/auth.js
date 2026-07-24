@@ -1,37 +1,13 @@
-'use strict';
-
-// ════════════════════════════════════════════════════════════
-// FIREBASE AUTH — Google Sign-In + ১৫-দিন Trial + Admin Approval
-// ✅ ফিক্স: Revoked/Expired-Trial এখন সম্পূর্ণ ব্লক না — অ্যাপে ঢুকতে
-// পারবে (Read-Only), শুধু একটা সতর্কতা ব্যানার দেখাবে। Write করার
-// চেষ্টা করলে Firestore Security Rules নিজেই আটকাবে (server-side
-// আসল নিরাপত্তা, ক্লায়েন্ট UI শুধু জানিয়ে দেয়)।
-// ✅ [নতুন, priority-fixes.md-এর বাইরে] Subscription promo trigger —
-// unlockApp()-এ statusInfo সহ maybeScheduleSubscriptionPromo() কল হয়,
-// যা subscription-promo.js-এ ডিফাইন করা (ট্রায়াল/renewal-nearing
-// ইউজারদের জন্য প্ল্যান-পপআপ শিডিউল করে)।
-// ════════════════════════════════════════════════════════════
-
-let fbAuth = null;
-let fbDb = null;
-let userDocUnsub = null;
-let mainAppBooted = false;
+let tenantOwnerUnsub = null; // ✅ staff হলে owner-এর profile আলাদাভাবে listen করার জন্য
 
 function initAuthGate() {
   try {
     firebase.initializeApp(APP_CONFIG.firebase);
     fbAuth = firebase.auth();
     fbDb = firebase.firestore();
-
-    // ✅ Offline Persistence — Firestore instance পাওয়ার সাথে সাথেই, অন্য কোনো
-    // read/write শুরুর আগে কল করতে হয় (এটাই Firebase-এর নির্ধারিত প্যাটার্ন)।
-    // synchronizeTabs:true দিলে একাধিক ট্যাব একসাথে খোলা থাকলেও কাজ করবে।
     fbDb.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        console.warn('Persistence: একাধিক ট্যাবে দ্বন্দ্ব — শুধু একটাতেই সক্রিয় থাকবে।');
-      } else if (err.code === 'unimplemented') {
-        console.warn('Persistence: এই ব্রাউজার অফলাইন-ক্যাশ সাপোর্ট করে না।');
-      }
+      if (err.code === 'failed-precondition') console.warn('Persistence: একাধিক ট্যাবে দ্বন্দ্ব।');
+      else if (err.code === 'unimplemented') console.warn('Persistence: সাপোর্ট নেই।');
     });
   } catch (err) {
     showFatalError('Firebase init সমস্যা:\n' + err.message);
@@ -40,56 +16,117 @@ function initAuthGate() {
 
   fbAuth.onAuthStateChanged((user) => {
     if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+    if (tenantOwnerUnsub) { tenantOwnerUnsub(); tenantOwnerUnsub = null; } // ✅ নতুন
     mainAppBooted = false;
 
-    if (!user) {
-      showAuthScreen('login');
-      return;
-    }
+    if (!user) { showAuthScreen('login'); return; }
     setLoadingMessage('প্রোফাইল যাচাই হচ্ছে...');
     watchUserProfile(user);
-  }, (err) => {
-    showFatalError('Auth স্টেট শোনার সময় সমস্যা:\n' + err.message);
-  });
+  }, (err) => showFatalError('Auth স্টেট শোনার সময় সমস্যা:\n' + err.message));
 }
 
 function watchUserProfile(user) {
   const ref = fbDb.collection('users').doc(user.uid);
-
   userDocUnsub = ref.onSnapshot(async (snap) => {
-    if (!snap.exists) {
-      const isOwner = user.email === APP_CONFIG.ADMIN_EMAIL;
-      const newProfile = {
-        email: user.email,
-        displayName: user.displayName || '',
-        photoURL: user.photoURL || '',
-        status: 'trial',
-        role: isOwner ? 'owner' : 'user',
+    if (!snap.exists) { await handleFirstLogin(user, ref); return; }
+    handleProfileSnapshot(user, { uid: user.uid, ...snap.data() });
+  }, (err) => showFatalError('প্রোফাইল শোনার সময় সমস্যা:\n' + err.message));
+}
+
+// ✅ [Track A - A.3] প্রথম লগইন — pending staff invite থাকলে সেটা accept করে
+// staff profile + roster এন্ট্রি তৈরি করে; না থাকলে আগের মতোই owner/trial।
+async function handleFirstLogin(user, ref) {
+  try {
+    const emailLower = (user.email || '').toLowerCase();
+    const inviteSnap = await fbDb.collectionGroup('staffInvites')
+      .where('email', '==', emailLower).limit(5).get();
+    const pendingInvite = inviteSnap.docs.find(d => d.data().status === 'pending');
+
+    if (pendingInvite) {
+      const ownerUid = pendingInvite.ref.parent.parent.id;
+      const role = pendingInvite.data().role;
+
+      const staffProfile = {
+        email: user.email, displayName: user.displayName || '', photoURL: user.photoURL || '',
+        status: 'staff', memberOfOwnerUid: ownerUid, memberRole: role,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       };
-      try {
-        await ref.set(newProfile);
-        if (isOwner) await ref.update({ status: 'approved' });
-      } catch (err) {
-        showFatalError('প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message);
-      }
-      return;
+      const rosterEntry = {
+        uid: user.uid, email: user.email, displayName: user.displayName || '',
+        role, status: 'active', joinedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+
+      const batch = fbDb.batch();
+      batch.set(ref, staffProfile);
+      batch.set(fbDb.collection('users').doc(ownerUid).collection('staff').doc(user.uid), rosterEntry);
+      await batch.commit();
+
+      // invite consume — batch-এর পরে, আলাদা call (rules-এ roster-create-এর
+      // সময় invite এখনো exist করা লাগে বলে delete আগে করা যাবে না)
+      await pendingInvite.ref.delete().catch(() => {});
+      return; // onSnapshot আবার ফায়ার হবে নতুন profile নিয়ে
     }
-    applyUserProfile(user, { uid: user.uid, ...snap.data() });
-  }, (err) => {
-    showFatalError('প্রোফাইল শোনার সময় সমস্যা:\n' + err.message);
-  });
+
+    const isOwner = user.email === APP_CONFIG.ADMIN_EMAIL;
+    const newProfile = {
+      email: user.email, displayName: user.displayName || '', photoURL: user.photoURL || '',
+      status: 'trial', role: isOwner ? 'owner' : 'user',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    };
+    await ref.set(newProfile);
+    if (isOwner) await ref.update({ status: 'approved' });
+  } catch (err) {
+    showFatalError('প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message);
+  }
+}
+
+// ✅ profile snapshot এলে — staff না owner অনুযায়ী দুই ভিন্ন পথে dispatch
+function handleProfileSnapshot(user, profile) {
+  if (profile.status === 'staff' && profile.memberOfOwnerUid) {
+    APP_STATE.isStaffMember = true;
+    APP_STATE.staffRole = profile.memberRole;
+    APP_STATE.tenantUid = profile.memberOfOwnerUid;
+    APP_STATE.isAdmin = false;
+
+    if (tenantOwnerUnsub) tenantOwnerUnsub();
+    tenantOwnerUnsub = fbDb.collection('users').doc(profile.memberOfOwnerUid).onSnapshot((ownerSnap) => {
+      if (!ownerSnap.exists) return;
+      applyTenantStatus(profile, ownerSnap.data());
+    }, (err) => showFatalError('মালিকের প্রোফাইল শোনার সময় সমস্যা:\n' + err.message));
+    return;
+  }
+
+  APP_STATE.isStaffMember = false;
+  APP_STATE.staffRole = null;
+  APP_STATE.tenantUid = user.uid;
+  applyUserProfile(user, profile);
+}
+
+// ✅ staff-এর readOnly/statusInfo owner-এর trial/subscription থেকে গণনা হয়
+function applyTenantStatus(staffProfile, ownerProfile) {
+  APP_STATE.currentUser = staffProfile; // uid = staff-এর নিজের actual uid (audit trail-এর জন্য)
+
+  let statusInfo;
+  if (ownerProfile.status === 'approved') {
+    const subDays = subscriptionDaysLeft(ownerProfile);
+    if (subDays === Infinity || subDays > 0) { APP_STATE.readOnly = false; statusInfo = { mode: 'approved', subDaysLeft: subDays === Infinity ? null : subDays }; }
+    else { APP_STATE.readOnly = true; statusInfo = { mode: 'subscription-expired' }; }
+  } else if (ownerProfile.status === 'revoked') {
+    APP_STATE.readOnly = true; statusInfo = { mode: 'revoked' };
+  } else {
+    const daysLeft = trialDaysLeft(ownerProfile);
+    if (daysLeft > 0) { APP_STATE.readOnly = false; statusInfo = { mode: 'trial', daysLeft }; }
+    else { APP_STATE.readOnly = true; statusInfo = { mode: 'trial-expired' }; }
+  }
+  APP_STATE.subscriptionStatusInfo = statusInfo;
+  unlockApp(staffProfile, statusInfo);
 }
 
 function trialDaysLeft(profile) {
   if (!profile.createdAt || !profile.createdAt.toDate) return APP_CONFIG.TRIAL_DAYS;
-  const createdMs = profile.createdAt.toDate().getTime();
-  const elapsedDays = (Date.now() - createdMs) / (1000 * 60 * 60 * 24);
+  const elapsedDays = (Date.now() - profile.createdAt.toDate().getTime()) / 86400000;
   return Math.ceil(APP_CONFIG.TRIAL_DAYS - elapsedDays);
 }
-
-// ✅ ফিক্স: Revoked ও Expired-Trial — দুটোই এখন unlockApp() কল করে,
-// শুধু readOnly ফ্ল্যাগ ও ভিন্ন ব্যানার সহ। কোনো hard-lockout screen না।
 function subscriptionDaysLeft(profile) {
   if (!profile.subscriptionExpiresAt || !profile.subscriptionExpiresAt.toDate) return Infinity;
   return Math.ceil((profile.subscriptionExpiresAt.toDate().getTime() - Date.now()) / 86400000);
@@ -102,23 +139,15 @@ function applyUserProfile(user, profile) {
   let statusInfo;
   if (profile.status === 'approved') {
     const subDays = subscriptionDaysLeft(profile);
-    if (subDays === Infinity || subDays > 0) {
-      APP_STATE.readOnly = false;
-      statusInfo = { mode: 'approved', subDaysLeft: subDays === Infinity ? null : subDays };
-    } else {
-      APP_STATE.readOnly = true;
-      statusInfo = { mode: 'subscription-expired' };
-    }
+    if (subDays === Infinity || subDays > 0) { APP_STATE.readOnly = false; statusInfo = { mode: 'approved', subDaysLeft: subDays === Infinity ? null : subDays }; }
+    else { APP_STATE.readOnly = true; statusInfo = { mode: 'subscription-expired' }; }
   } else if (profile.status === 'revoked') {
-    APP_STATE.readOnly = true;
-    statusInfo = { mode: 'revoked' };
+    APP_STATE.readOnly = true; statusInfo = { mode: 'revoked' };
   } else {
     const daysLeft = trialDaysLeft(profile);
     if (daysLeft > 0) { APP_STATE.readOnly = false; statusInfo = { mode: 'trial', daysLeft }; }
     else { APP_STATE.readOnly = true; statusInfo = { mode: 'trial-expired' }; }
   }
-
-  // ✅ নতুন — contact.js (ও ভবিষ্যতে অন্য মডিউল) কোনো recompute ছাড়াই এটা পড়তে পারবে
   APP_STATE.subscriptionStatusInfo = statusInfo;
   unlockApp(profile, statusInfo);
 }
@@ -126,13 +155,7 @@ function applyUserProfile(user, profile) {
 function unlockApp(profile, statusInfo) {
   showAuthScreen(null);
   renderUserBadge(profile, statusInfo);
-  // ✅ [নতুন] সাবস্ক্রিপশন প্রমো — ট্রায়াল/renewal-nearing অবস্থায় শিডিউল করে,
-  // অন্য mode-এ (approved সীমাহীন, revoked, trial-expired) কিছু করে না।
-  // ফাংশনটা নিজেই session-dedup ও duplicate-schedule গার্ড করে, তাই
-  // unlockApp() একাধিকবার (প্রতি profile snapshot-এ) কল হলেও নিরাপদ।
-  if (typeof maybeScheduleSubscriptionPromo === 'function') {
-    maybeScheduleSubscriptionPromo(statusInfo);
-  }
+  if (typeof maybeScheduleSubscriptionPromo === 'function') maybeScheduleSubscriptionPromo(statusInfo);
   if (mainAppBooted) return;
   mainAppBooted = true;
   initApp();
@@ -145,12 +168,11 @@ function signInWithGoogle() {
 
 function signOutUser() {
   if (userDocUnsub) { userDocUnsub(); userDocUnsub = null; }
+  if (tenantOwnerUnsub) { tenantOwnerUnsub(); tenantOwnerUnsub = null; } // ✅ নতুন
   mainAppBooted = false;
   fbAuth.signOut().then(() => location.reload());
 }
 
-// 'screen-revoked' ও 'screen-trial-expired' এখন আর ব্যবহৃত হয় না (dead markup,
-// ক্ষতি নেই রেখে দিলে) — শুধু 'login' এখনো hard-gate হিসেবে থেকে যাচ্ছে
 function showAuthScreen(name) {
   document.getElementById('app-loading')?.classList.add('hide');
   ['screen-login', 'screen-trial-expired', 'screen-revoked'].forEach(id => {
@@ -160,6 +182,8 @@ function showAuthScreen(name) {
 }
 
 function renderUserBadge(profile, statusInfo) {
+  // ... অপরিবর্তিত (আগের কোডের হুবহু একই)
+
   const el = document.getElementById('user-badge');
   if (el) {
     el.innerHTML = `
