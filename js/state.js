@@ -12,6 +12,10 @@ const APP_STATE = {
   currentUser: null,
   isAdmin: false,
   subscriptionStatusInfo: null, // ✅ নতুন — auth.js-এর applyUserProfile() সেট করে, contact.js পড়ে
+  tenantUid: null,       // owner হলে নিজের uid, staff হলে owner-এর uid — userCol() এটাই ব্যবহার করবে
+  staffRole: null,        // 'manager' | 'cashier' | null
+  isStaffMember: false,
+
 
   // Business data (এখনো খালি — পরের ধাপে Mock Data দিয়ে পূরণ হবে)
   pharmacyName: 'ফার্মেসি',
@@ -35,6 +39,9 @@ const APP_STATE = {
   pendingSales: [],       // অফলাইনে queue করা বিক্রয় (শুধু sync-badge-এর জন্য রেফারেন্স)
   pendingPurchases: [],   // অফলাইনে queue করা ক্রয়
   pendingReturns: [],
+
+  staffList: [],
+  staffInvites: [],
 
   // POS/Purchase draft cart (multi-item form state — পরে ব্যবহৃত হবে)
   posItems: [],
@@ -95,6 +102,12 @@ const NAV_CONFIG = [
     items: [
       { id: 'contact', label: 'যোগাযোগ ও সাবস্ক্রিপশন', icon: 'fa-headset' },
     ],
+  },
+  {
+  section: 'টিম',
+  items: [
+    { id: 'staff', label: 'স্টাফ ম্যানেজমেন্ট', icon: 'fa-users-gear' },
+  ],
   },
   {
     section: 'প্রশাসন',
