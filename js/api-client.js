@@ -491,7 +491,7 @@ function restockBatchesFromConsumed(batches, item, fallbackBatchIdPrefix, sellFa
 
 async function apiSubmitSale(sale, opts = {}) {
   const isRetry = !!opts.isRetry;
-
+  if (!sale.createdByUid) sale.createdByUid = APP_STATE.currentUser?.uid || null; // ✅ [Track A]
   if (!navigator.onLine) {
     if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
     return await queueSaleOffline(sale);
@@ -638,7 +638,7 @@ async function apiDeleteSale(sale) {
 // ────────────────────────────────────────────────────────────
 async function apiSubmitPurchase(purchase, opts = {}) {
   const isRetry = !!opts.isRetry;
-
+  if (!purchase.createdByUid) purchase.createdByUid = APP_STATE.currentUser?.uid || null; // ✅ [Track A]
   if (!navigator.onLine) {
     if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
     return await queuePurchaseOffline(purchase);
@@ -770,7 +770,7 @@ async function apiDeletePurchase(purchase) {
 // ────────────────────────────────────────────────────────────
 async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction, opts = {}) {
   const isRetry = !!opts.isRetry;
-
+  if (!returnDoc.createdByUid) returnDoc.createdByUid = APP_STATE.currentUser?.uid || null; // ✅ [Track A]
   if (!navigator.onLine) {
     if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
     return await queueCustomerReturnOffline({ returnDoc, custId, custDueReduction });
@@ -836,7 +836,7 @@ async function apiSubmitCustomerReturn(returnDoc, custId, custDueReduction, opts
 
 async function apiSubmitSupplierReturn(returnDoc, supId, supPayableReduction, opts = {}) {
   const isRetry = !!opts.isRetry;
-
+  if (!returnDoc.createdByUid) returnDoc.createdByUid = APP_STATE.currentUser?.uid || null; // ✅ [Track A]
   if (!navigator.onLine) {
     if (isRetry) return { success: false, message: 'এখনো অফলাইন — পরের সাইকেলে আবার চেষ্টা হবে।' };
     return await queueSupplierReturnOffline({ returnDoc, supId, supPayableReduction });
