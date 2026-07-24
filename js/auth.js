@@ -1,4 +1,10 @@
-let tenantOwnerUnsub = null; // ✅ staff হলে owner-এর profile আলাদাভাবে listen করার জন্য
+'use strict';
+
+let fbAuth = null;
+let fbDb = null;
+let userDocUnsub = null;
+let mainAppBooted = false;
+let tenantOwnerUnsub = null; // ✅ [Track A - A.3]
 
 function initAuthGate() {
   try {
