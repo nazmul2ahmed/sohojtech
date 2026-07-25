@@ -6,8 +6,8 @@ function renderReturnsModule() {
   APP_STATE.retMode = APP_STATE.retMode || 'customer';
   c.innerHTML = `
     <div class="flex gap-2 mb-4">
-      <button onclick="setRetMode('customer')" id="ret-tab-customer" class="flex-1 py-2 rounded-lg text-sm font-semibold border"></button>
-      <button onclick="setRetMode('supplier')" id="ret-tab-supplier" class="flex-1 py-2 rounded-lg text-sm font-semibold border"></button>
+      <button onclick="setRetMode('customer')" id="ret-tab-customer" class="btn flex-1"></button>
+      <button onclick="setRetMode('supplier')" id="ret-tab-supplier" class="btn flex-1"></button>
     </div>
     <div id="ret-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-3 py-2 mb-3"></div>
     <div id="ret-form"></div>
@@ -32,8 +32,8 @@ function updateRetTabsUI() {
   if (!cb) return;
   cb.textContent = 'কাস্টমার রিটার্ন';
   sb.textContent = 'সাপ্লায়ার রিটার্ন / এক্সপায়ারি';
-  cb.className = `flex-1 py-2 rounded-lg text-sm font-semibold border transition ${isCust ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`;
-  sb.className = `flex-1 py-2 rounded-lg text-sm font-semibold border transition ${!isCust ? 'bg-amber-500 text-white border-amber-500' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`;
+  cb.className = `btn flex-1 ${isCust ? 'btn-primary' : 'btn-secondary'}`;
+  sb.className = `btn flex-1 ${!isCust ? 'btn-warning' : 'btn-secondary'}`;
 }
 
 function returnedQty(refId, medId, type) {
@@ -125,7 +125,7 @@ function onRetInvoiceSelect(invoiceNo) {
     <div class="flex justify-between items-center mb-3 bg-brand/10 rounded-lg px-3 py-2">
       <span class="text-sm font-semibold">মোট ফেরত পরিমাণ</span><span id="ret-c-total" class="font-mono font-bold text-brand">৳০.০০</span>
     </div>
-    <button id="ret-c-submit-btn" onclick="submitCustomerReturn('${invoiceNo}')" class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg">রিটার্ন নিশ্চিত করুন</button>`;
+    <button id="ret-c-submit-btn" onclick="submitCustomerReturn('${invoiceNo}')" class="btn btn-primary btn-block">রিটার্ন নিশ্চিত করুন</button>`;
 }
 
 function calcRetCustTotal() {
@@ -228,10 +228,10 @@ function onRetPurchaseSelect(purId) {
     const alreadyOnThisPurchase = returnedQty(purId, item.medId, 'supplier');
     const purchaseCap = item.qty - alreadyOnThisPurchase;
     const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
-    const hasBatchTracking = !!item.batchId; // পুরনো (ফিক্সের আগের) purchase-এ batchId নাও থাকতে পারে
+    const hasBatchTracking = !!item.batchId;
     const batchStock = hasBatchTracking
       ? (inv?.batches.find(b => b.batchId === item.batchId)?.stock || 0)
-      : (inv?.totalStock || 0); // legacy fallback — আগের আচরণ
+      : (inv?.totalStock || 0);
     const maxQty = Math.max(0, Math.min(purchaseCap, batchStock));
     const stockNote = !hasBatchTracking
       ? `<span class="text-amber-600">পুরনো এন্ট্রি — batch-tracking নেই, আনুমানিক সীমা</span>`
@@ -260,7 +260,7 @@ function onRetPurchaseSelect(purId) {
     <div class="flex justify-between items-center mb-3 bg-amber-500/10 rounded-lg px-3 py-2">
       <span class="text-sm font-semibold">মোট পরিমাণ</span><span id="ret-s-total" class="font-mono font-bold text-amber-600">৳০.০০</span>
     </div>
-    <button id="ret-s-submit-btn" onclick="submitSupplierReturn('${purId}')" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2.5 rounded-lg">রিটার্ন/রাইট-অফ নিশ্চিত করুন</button>`;
+    <button id="ret-s-submit-btn" onclick="submitSupplierReturn('${purId}')" class="btn btn-warning btn-block">রিটার্ন/রাইট-অফ নিশ্চিত করুন</button>`;
 }
 
 function toggleRetSupReasonUI() {
