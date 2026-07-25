@@ -136,8 +136,8 @@ function updatePurPayTypeUI() {
   if (!cashBtn) return;
   cashBtn.textContent = 'নগদ';
   dueBtn.textContent = 'বাকি (সরবরাহকারী পাওনা)';
-  cashBtn.className = `flex-1 py-2 rounded-lg text-sm font-semibold border transition ${isCash ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`;
-  dueBtn.className = `flex-1 py-2 rounded-lg text-sm font-semibold border transition ${!isCash ? 'bg-amber-500 text-white border-amber-500' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`;
+  cashBtn.className = `btn flex-1 ${isCash ? 'btn-primary' : 'btn-secondary'}`;
+  dueBtn.className = `btn flex-1 ${!isCash ? 'btn-warning' : 'btn-secondary'}`;
   const noteBox = document.getElementById('pur-note-box');
   noteBox.innerHTML = isCash
     ? `<p class="text-[11px] text-slate-400">নগদে ক্রয় — আজকের Cash Flow-এ ব্যয় হিসেবে যোগ হবে</p>`
