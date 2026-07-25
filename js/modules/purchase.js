@@ -53,16 +53,14 @@ function renderPurchaseModule() {
         <div class="mb-3">
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">পেমেন্ট ধরন</label>
           <div class="flex gap-2">
-            <button type="button" id="pur-pay-cash" onclick="setPurPayType('নগদ')"
-              class="flex-1 py-2 rounded-lg text-sm font-semibold border transition"></button>
-            <button type="button" id="pur-pay-due" onclick="setPurPayType('বাকি')"
-              class="flex-1 py-2 rounded-lg text-sm font-semibold border transition"></button>
+            <button type="button" id="pur-pay-cash" onclick="setPurPayType('নগদ')" class="btn flex-1"></button>
+            <button type="button" id="pur-pay-due" onclick="setPurPayType('বাকি')" class="btn flex-1"></button>
           </div>
         </div>
 
         <div id="pur-items-list" class="space-y-2 mb-3"></div>
 
-        <button onclick="addPurchaseItem()" class="text-brand text-sm font-semibold flex items-center gap-1.5 mb-4 hover:underline">
+        <button onclick="addPurchaseItem()" class="btn btn-brand-outline btn-sm mb-4">
           <i class="fa-solid fa-plus"></i> ওষুধ যোগ করুন
         </button>
 
@@ -76,8 +74,7 @@ function renderPurchaseModule() {
           </div>
         </div>
 
-        <button onclick="submitPurchase()" id="pur-submit-btn"
-          class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 transition">
+        <button onclick="submitPurchase()" id="pur-submit-btn" class="btn btn-primary btn-block">
           <i class="fa-solid fa-boxes-packing"></i> ক্রয় নিশ্চিত করুন
           <span class="text-[11px] font-normal opacity-70 hidden sm:inline">(Ctrl+Enter)</span>
         </button>
