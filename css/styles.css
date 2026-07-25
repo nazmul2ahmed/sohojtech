@@ -1,8 +1,4 @@
 :root {
-  /* ✅ ৩.১: ব্র্যান্ড কালার এখন এখানে single source of truth —
-     js/tailwind-config.js-এর colors.brand এই ভ্যারিয়েবল দুটো
-     রেফারেন্স করে (var(--brand)), plain CSS বাটন ক্লাসও (৩.২) এখান
-     থেকেই নেবে। */
   --brand: #1A6EBD;
   --brand-dark: #5AB4FF;
 
@@ -15,8 +11,6 @@
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 .dark ::-webkit-scrollbar-thumb { background: #475569; }
 
-/* ✅ Firefox fallback — scrollbar-width/scrollbar-color standard property,
-   WebKit rule-গুলো Firefox আমলেই নেয় না, তাই এই আলাদা rule দরকার */
 * {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
@@ -37,8 +31,101 @@
   pointer-events: none;
 }
 
-/* Keyboard-focus visibility — POS স্ক্রিনে দরকার হবে (Phase A) */
 input:focus-visible, select:focus-visible, button:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 1px;
 }
+
+/* ════════════════════════════════════════════════════════════
+   ✅ ৩.২: বাটন ক্লাস সিস্টেম — plain CSS (Tailwind CDN-এ external
+   stylesheet-এ @apply কাজ করে না, তাই hex/rem ভ্যালু direct লেখা)।
+   সব variant min-height:44px রাখে (touch-target — ৩.৩), disabled
+   state সবগুলোতে কমন প্যাটার্নে।
+
+   ব্যবহার: <button class="btn btn-primary">সংরক্ষণ করুন</button>
+   ছোট/inline প্রয়োজনে: <button class="btn btn-primary btn-sm">...</button>
+   আইকন-শুধু বর্গাকার বাটনের জন্য: <button class="btn-icon">...</button>
+   ════════════════════════════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .375rem;
+  min-height: 44px;
+  padding: .625rem 1.25rem;
+  border-radius: .5rem;
+  font-size: .875rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* ── ফুল-উইড্থ ভ্যারিয়েন্ট (ফর্ম সাবমিট বাটনে বহুল ব্যবহৃত) ── */
+.btn-block { width: 100%; }
+
+/* ── ছোট সাইজ (inline/টেবিল-হেডারে, কিন্তু তবুও ≥44px height থাকে —
+     শুধু padding/font কমে, touch-target কমে না) ── */
+.btn-sm { padding: .5rem 1rem; font-size: .8125rem; }
+
+/* ── PRIMARY (brand blue — সবচেয়ে বেশি ব্যবহৃত সাবমিট/প্রধান একশন) ── */
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #1557a0; }
+
+/* ── SECONDARY (outline — বাতিল/সেকেন্ডারি একশন) ── */
+.btn-secondary {
+  background: #fff; color: #475569; border-color: #cbd5e1;
+}
+.btn-secondary:hover:not(:disabled) { background: #f8fafc; }
+.dark .btn-secondary { background: #334155; color: #cbd5e1; border-color: #475569; }
+.dark .btn-secondary:hover:not(:disabled) { background: #3f4c60; }
+
+/* ── DANGER (লাল — ডিলিট/রিসেট/ধ্বংসাত্মক একশন) ── */
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+
+/* ── DANGER-OUTLINE (কম-জোরালো সতর্কতা, যেমন "সব ডেটা মুছুন" আগে) ── */
+.btn-danger-outline { background: transparent; color: #dc2626; border-color: #fca5a5; }
+.btn-danger-outline:hover:not(:disabled) { background: #fef2f2; }
+
+/* ── SUCCESS (সবুজ — গ্রহণ/পরিশোধ/নিশ্চিতকরণ একশন) ── */
+.btn-success { background: #059669; color: #fff; }
+.btn-success:hover:not(:disabled) { background: #047857; }
+
+/* ── WARNING (amber — বাকি-ক্রয়/সতর্কতামূলক একশন, যেমন সাপ্লায়ার রিটার্ন) ── */
+.btn-warning { background: #f59e0b; color: #fff; }
+.btn-warning:hover:not(:disabled) { background: #d97706; }
+
+/* ── BRAND-OUTLINE (হালকা secondary-brand, যেমন "Master থেকে আমদানি") ── */
+.btn-brand-outline { background: transparent; color: var(--brand); border-color: var(--brand); }
+.btn-brand-outline:hover:not(:disabled) { background: rgba(26,110,189,.05); }
+
+/* ════════════════════════════════════════════════════════════
+   ✅ ৩.৩: আইকন-শুধু বর্গাকার বাটন (হেডার: calculator/dark-toggle/
+   sign-out) — আগে w-9 h-9 (৩৬px) ছিল, এখন ৪৪px টাচ-টার্গেট।
+   ════════════════════════════════════════════════════════════ */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: .5rem;
+  border: 1px solid #e2e8f0;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.btn-icon:hover { background: #f1f5f9; }
+.btn-icon:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.dark .btn-icon { border-color: #475569; color: #cbd5e1; }
+.dark .btn-icon:hover { background: #334155; }
+
+.btn-icon-danger:hover { background: #fef2f2; color: #ef4444; }
+.dark .btn-icon-danger:hover { background: rgba(127,29,29,.2); color: #f87171; }
