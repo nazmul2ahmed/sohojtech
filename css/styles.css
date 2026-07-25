@@ -1,4 +1,11 @@
 :root {
+  /* ✅ ৩.১: ব্র্যান্ড কালার এখন এখানে single source of truth —
+     js/tailwind-config.js-এর colors.brand এই ভ্যারিয়েবল দুটো
+     রেফারেন্স করে (var(--brand)), plain CSS বাটন ক্লাসও (৩.২) এখান
+     থেকেই নেবে। */
+  --brand: #1A6EBD;
+  --brand-dark: #5AB4FF;
+
   --shadow-sm: 0 2px 8px rgba(13,27,42,.07);
   --shadow-md: 0 4px 20px rgba(13,27,42,.12);
   --transition: all .2s ease;
@@ -32,6 +39,6 @@
 
 /* Keyboard-focus visibility — POS স্ক্রিনে দরকার হবে (Phase A) */
 input:focus-visible, select:focus-visible, button:focus-visible {
-  outline: 2px solid #1A6EBD;
+  outline: 2px solid var(--brand);
   outline-offset: 1px;
 }
