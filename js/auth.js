@@ -65,11 +65,29 @@ async function checkConflictingInvite(user) {
 
 // ✅ [Track A - A.3] প্রথম লগইন — pending staff invite থাকলে সেটা accept করে
 // staff profile + roster এন্ট্রি তৈরি করে; না থাকলে আগের মতোই owner/trial।
+//
+// 🔎 সাময়িক ডায়াগনস্টিক (permission-denied বাগ ট্র্যাক করার জন্য):
+// আগে পুরো ফাংশনটা একটাই try/catch-এ ছিল, তাই staffInvites কোয়েরি না
+// profile-create — এই দুটোর কোনটা ব্যর্থ হচ্ছে তা এরর মেসেজ থেকে আলাদা
+// করা যাচ্ছিল না। এখন দুটো ধাপ আলাদা try/catch-এ, প্রতিটার এরর মেসেজে
+// স্পষ্ট ট্যাগ ([ধাপ ১: staffInvites চেক] / [ধাপ ২: profile create])
+// যোগ করা হয়েছে। রুট-কজ শনাক্ত হওয়ার পর এই split সরিয়ে ফেলা হবে বা
+// স্থায়ীভাবে রাখা হবে (সিদ্ধান্ত ব্যবহারকারীর)।
 async function handleFirstLogin(user, ref) {
+  const emailLower = (user.email || '').toLowerCase();
+
+  // ── ধাপ ১: pending staff-invite আছে কিনা চেক ──
+  let inviteSnap;
   try {
-    const emailLower = (user.email || '').toLowerCase();
-    const inviteSnap = await fbDb.collectionGroup('staffInvites')
+    inviteSnap = await fbDb.collectionGroup('staffInvites')
       .where('email', '==', emailLower).limit(5).get();
+  } catch (err) {
+    showFatalError('[ধাপ ১: staffInvites চেক] প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message, err);
+    return;
+  }
+
+  // ── ধাপ ২: invite অনুযায়ী staff profile, অথবা সাধারণ owner/trial profile তৈরি ──
+  try {
     const pendingInvite = inviteSnap.docs.find(d => d.data().status === 'pending');
 
     if (pendingInvite) {
@@ -106,8 +124,8 @@ async function handleFirstLogin(user, ref) {
     await ref.set(newProfile);
     if (isOwner) await ref.update({ status: 'approved' });
   } catch (err) {
-    showFatalError('প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message, err);
-}
+    showFatalError('[ধাপ ২: profile create] প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message, err);
+  }
 }
 
 // ✅ profile snapshot এলে — staff না owner অনুযায়ী দুই ভিন্ন পথে dispatch
