@@ -57,7 +57,7 @@ function renderPOSModule() {
 
         <div id="pos-items-list" class="space-y-2 mb-3"></div>
 
-        <button onclick="addPOSItem()" class="text-brand text-sm font-semibold flex items-center gap-1.5 mb-4 hover:underline">
+        <button onclick="addPOSItem()" class="btn btn-brand-outline btn-sm mb-4">
           <i class="fa-solid fa-plus"></i> ওষুধ যোগ করুন
         </button>
 
@@ -77,8 +77,7 @@ function renderPOSModule() {
           </div>
         </div>
 
-        <button onclick="submitPOSSale()" id="pos-submit-btn"
-          class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 transition">
+        <button onclick="submitPOSSale()" id="pos-submit-btn" class="btn btn-primary btn-block">
           <i class="fa-solid fa-circle-check"></i> বিক্রয় নিশ্চিত করুন
           <span class="text-[11px] font-normal opacity-70 hidden sm:inline">(Ctrl+Enter)</span>
         </button>
