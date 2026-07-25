@@ -1570,18 +1570,50 @@ async function apiInviteStaff(email, role) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const ownerUid = APP_STATE.currentUser.uid;
-    const inviteRef = fbDb.collection('users').doc(ownerUid).collection('staffInvites').doc(email);
+    // ✅ ফিক্স: lowercase normalize — accept-ফ্লো-তে rules সবসময়
+    // request.auth.token.email.lower() দিয়ে এই doc ID খুঁজবে (দেখুন
+    // auth.js-এর handleFirstLogin/checkConflictingInvite)। এখানে raw-case
+    // email দিয়ে doc বানালে বড়-হাতের অক্ষর থাকলে accept-এর সময়
+    // exists() false হয়ে স্টাফ কখনো যুক্ত হতে পারবে না।
+    const emailLower = email.trim().toLowerCase();
+    const inviteRef = fbDb.collection('users').doc(ownerUid).collection('staffInvites').doc(emailLower);
+    const lookupRef = fbDb.collection('staffInviteLookup').doc(emailLower);
+
     const existing = await inviteRef.get();
     if (existing.exists) return { success: false, message: 'এই ইমেইলে ইতিমধ্যে একটা পেন্ডিং ইনভাইট আছে।' };
-    await inviteRef.set({ email, role, status: 'pending', invitedAt: firebase.firestore.FieldValue.serverTimestamp() });
-    return { success: true, message: `"${email}"-কে ইনভাইট পাঠানো হয়েছে। তারা Google দিয়ে লগইন করলেই যুক্ত হয়ে যাবে।` };
+
+    const batch = fbDb.batch();
+    batch.set(inviteRef, { email: emailLower, role, status: 'pending', invitedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    batch.set(lookupRef, { ownerUid, role, invitedAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+    try {
+      await batch.commit();
+    } catch (err) {
+      // ✅ lookup doc অন্য owner-এর নামে আগে থেকে থাকলে rules block করবে
+      // (staffInviteLookup-এর update rule শুধু একই ownerUid-কে অনুমতি দেয়)
+      if (err.code === 'permission-denied') {
+        return { success: false, message: 'এই ইমেইলে ইতিমধ্যে অন্য কোনো ফার্মেসি থেকে পেন্ডিং ইনভাইট আছে — আগে সেটা বাতিল করাতে হবে।' };
+      }
+      throw err;
+    }
+
+    return { success: true, message: `"${emailLower}"-কে ইনভাইট পাঠানো হয়েছে। তারা Google দিয়ে লগইন করলেই যুক্ত হয়ে যাবে।` };
   } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
 async function apiCancelInvite(email) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
-    await fbDb.collection('users').doc(APP_STATE.currentUser.uid).collection('staffInvites').doc(email).delete();
+    const ownerUid = APP_STATE.currentUser.uid;
+    // ✅ একই lowercase normalize — apiInviteStaff-এ যে case দিয়ে doc তৈরি
+    // হয়েছিল, ঠিক সেই case-এই delete করতে হবে (নাহলে stale lookup entry
+    // থেকে যাবে এবং ভবিষ্যতে নতুন ইনভাইট পাঠাতে গেলে "already invited by
+    // another pharmacy" এরর দেবে, নিজের-ই আগের এন্ট্রির সাথে সংঘর্ষ করে)
+    const emailLower = email.trim().toLowerCase();
+    const batch = fbDb.batch();
+    batch.delete(fbDb.collection('users').doc(ownerUid).collection('staffInvites').doc(emailLower));
+    batch.delete(fbDb.collection('staffInviteLookup').doc(emailLower));
+    await batch.commit();
     return { success: true, message: 'ইনভাইট বাতিল করা হয়েছে।' };
   } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
