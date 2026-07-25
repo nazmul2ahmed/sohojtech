@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v15'; // ✅ v11→v12: subscription-promo.js যোগ হয়েছে PRECACHE_URLS-এ, তাই বাম্প করা হলো
+const CACHE_NAME = 'sohojtech-shell-v16'; // ✅ v11→v12: subscription-promo.js যোগ হয়েছে PRECACHE_URLS-এ, তাই বাম্প করা হলো
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
