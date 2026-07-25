@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v14'; // ✅ v11→v12: subscription-promo.js যোগ হয়েছে PRECACHE_URLS-এ, তাই বাম্প করা হলো
+const CACHE_NAME = 'sohojtech-shell-v15'; // ✅ v11→v12: subscription-promo.js যোগ হয়েছে PRECACHE_URLS-এ, তাই বাম্প করা হলো
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
@@ -10,7 +10,7 @@ const NETWORK_TIMEOUT_MS = 3000;
 // হয় (নিচে দেখুন) — শুধু আইকন cache-first, বাকিগুলো না।
 // ══════════════════════════════════════════════════════════
 const PRECACHE_URLS = [
-  './', './index.html', './manifest.json', './css/styles.css',
+  './', './index.html', './manifest.json', './css/styles.css', './js/tailwind-config.js',
   './js/config.js', './js/utils.js', './js/state.js', './js/ui-components.js', './js/receipt.js',
   './js/subscription-promo.js', './js/modules/contact.js',
   './js/modules/dashboard.js', './js/modules/pos.js', './js/modules/purchase.js',
