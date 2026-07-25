@@ -49,13 +49,14 @@ function watchUserProfile(user) {
   }, (err) => showFatalError('প্রোফাইল শোনার সময় সমস্যা:\n' + err.message));
 }
 
+// ✅ ফিক্স: collectionGroup('staffInvites') কোয়েরি বাদ — staffInviteLookup
+// কালেকশনে doc ID = lowercase email, তাই O(1) get() দিয়েই lookup হচ্ছে।
+// Rules-এও এখন আর collectionGroup list-rule জটিলতা নেই (দেখুন firestore.rules)।
 async function checkConflictingInvite(user) {
   try {
     const emailLower = (user.email || '').toLowerCase();
-    const inviteSnap = await fbDb.collectionGroup('staffInvites')
-      .where('email', '==', emailLower).limit(5).get();
-    const pendingInvite = inviteSnap.docs.find(d => d.data().status === 'pending');
-    if (pendingInvite) {
+    const lookupDoc = await fbDb.collection('staffInviteLookup').doc(emailLower).get();
+    if (lookupDoc.exists) {
       toast('আপনার এই ইমেইলে একটা স্টাফ-ইনভাইট পেন্ডিং আছে, কিন্তু এই Google অ্যাকাউন্টে ইতিমধ্যে নিজস্ব ডেটা/অ্যাক্সেস আছে — তাই স্বয়ংক্রিয়ভাবে যুক্ত হয়নি। যিনি ইনভাইট পাঠিয়েছেন তার সাথে যোগাযোগ করুন, অথবা ভিন্ন Google অ্যাকাউন্ট দিয়ে লগইন করুন।', 'w');
     }
   } catch (err) {
@@ -65,34 +66,18 @@ async function checkConflictingInvite(user) {
 
 // ✅ [Track A - A.3] প্রথম লগইন — pending staff invite থাকলে সেটা accept করে
 // staff profile + roster এন্ট্রি তৈরি করে; না থাকলে আগের মতোই owner/trial।
-//
-// 🔎 সাময়িক ডায়াগনস্টিক (permission-denied বাগ ট্র্যাক করার জন্য):
-// আগে পুরো ফাংশনটা একটাই try/catch-এ ছিল, তাই staffInvites কোয়েরি না
-// profile-create — এই দুটোর কোনটা ব্যর্থ হচ্ছে তা এরর মেসেজ থেকে আলাদা
-// করা যাচ্ছিল না। এখন দুটো ধাপ আলাদা try/catch-এ, প্রতিটার এরর মেসেজে
-// স্পষ্ট ট্যাগ ([ধাপ ১: staffInvites চেক] / [ধাপ ২: profile create])
-// যোগ করা হয়েছে। রুট-কজ শনাক্ত হওয়ার পর এই split সরিয়ে ফেলা হবে বা
-// স্থায়ীভাবে রাখা হবে (সিদ্ধান্ত ব্যবহারকারীর)।
+// ✅ ফিক্স: collectionGroup query বাদ — staffInviteLookup/{emailLower} থেকে
+// O(1) get() দিয়ে ownerUid + role বের করা হচ্ছে। accept-এর পর দুই জায়গা
+// থেকেই cleanup করা হয় (staffInviteLookup + owner-এর staffInvites subcollection)
+// যাতে কোনো stale entry না থেকে যায়।
 async function handleFirstLogin(user, ref) {
-  const emailLower = (user.email || '').toLowerCase();
-
-  // ── ধাপ ১: pending staff-invite আছে কিনা চেক ──
-  let inviteSnap;
   try {
-    inviteSnap = await fbDb.collectionGroup('staffInvites')
-      .where('email', '==', emailLower).limit(5).get();
-  } catch (err) {
-    showFatalError('[ধাপ ১: staffInvites চেক] প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message, err);
-    return;
-  }
+    const emailLower = (user.email || '').toLowerCase();
+    const lookupRef = fbDb.collection('staffInviteLookup').doc(emailLower);
+    const lookupDoc = await lookupRef.get();
 
-  // ── ধাপ ২: invite অনুযায়ী staff profile, অথবা সাধারণ owner/trial profile তৈরি ──
-  try {
-    const pendingInvite = inviteSnap.docs.find(d => d.data().status === 'pending');
-
-    if (pendingInvite) {
-      const ownerUid = pendingInvite.ref.parent.parent.id;
-      const role = pendingInvite.data().role;
+    if (lookupDoc.exists) {
+      const { ownerUid, role } = lookupDoc.data();
 
       const staffProfile = {
         email: user.email, displayName: user.displayName || '', photoURL: user.photoURL || '',
@@ -109,9 +94,11 @@ async function handleFirstLogin(user, ref) {
       batch.set(fbDb.collection('users').doc(ownerUid).collection('staff').doc(user.uid), rosterEntry);
       await batch.commit();
 
-      // invite consume — batch-এর পরে, আলাদা call (rules-এ roster-create-এর
-      // সময় invite এখনো exist করা লাগে বলে delete আগে করা যাবে না)
-      await pendingInvite.ref.delete().catch(() => {});
+      // ✅ দুই জায়গা থেকেই invite ক্লিনআপ — batch-এর পরে, আলাদা call
+      // (rules-এ roster-create-এর সময় lookup doc এখনো exist করা লাগে
+      // বলে delete আগে করা যাবে না)
+      await lookupRef.delete().catch(() => {});
+      await fbDb.collection('users').doc(ownerUid).collection('staffInvites').doc(emailLower).delete().catch(() => {});
       return; // onSnapshot আবার ফায়ার হবে নতুন profile নিয়ে
     }
 
@@ -124,8 +111,8 @@ async function handleFirstLogin(user, ref) {
     await ref.set(newProfile);
     if (isOwner) await ref.update({ status: 'approved' });
   } catch (err) {
-    showFatalError('[ধাপ ২: profile create] প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message, err);
-  }
+    showFatalError('প্রোফাইল তৈরি করতে সমস্যা:\n' + err.message, err);
+}
 }
 
 // ✅ profile snapshot এলে — staff না owner অনুযায়ী দুই ভিন্ন পথে dispatch
