@@ -45,24 +45,9 @@
 }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<!-- Tailwind CDN (Phase A baseline) -->
+<!-- Tailwind CDN (shared config — js/tailwind-config.js single source of truth) -->
 <script src="https://cdn.tailwindcss.com"></script>
-<script>
-  tailwind.config = {
-    darkMode: 'class',
-    theme: {
-      extend: {
-        fontFamily: {
-          sans: ['Inter', 'system-ui', 'sans-serif'],
-          mono: ['JetBrains Mono', 'monospace'],
-        },
-        colors: {
-          brand: { DEFAULT: '#1A6EBD', dark: '#5AB4FF' },
-        },
-      },
-    },
-  };
-</script>
+<script src="js/tailwind-config.js?v=20260725"></script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
