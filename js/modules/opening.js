@@ -49,7 +49,7 @@ function renderOpeningModule() {
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">বিবরণ</label>
           <input type="text" id="ob-desc" placeholder="বিবরণ লিখুন" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
         </div>
-        <button onclick="submitOpeningEntry()" class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-sm"><i class="fa-solid fa-floppy-disk mr-1"></i> Opening এন্ট্রি সংরক্ষণ</button>
+        <button onclick="submitOpeningEntry()" class="btn btn-primary btn-block"><i class="fa-solid fa-floppy-disk"></i> Opening এন্ট্রি সংরক্ষণ</button>
       </div>
 
       <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden h-fit">
