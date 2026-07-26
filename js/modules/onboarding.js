@@ -9,22 +9,18 @@
 // ════════════════════════════════════════════════════════════
 
 function maybeShowOnboardingModal() {
-  if (APP_STATE.isStaffMember) return; // staff-এর নিজের ফার্মেসি সেটআপ করার কিছু নেই
-  if (APP_STATE.onboardingComplete) return;
+  if (APP_STATE.isStaffMember) return false; // staff-এর নিজের ফার্মেসি সেটআপ করার কিছু নেই
+  if (APP_STATE.onboardingComplete) return false;
 
-  // ✅ Migration safety: বিদ্যমান ইউজার যাদের pharmacyName ইতিমধ্যে সেট
-  // করা আছে (onboardingComplete ফ্ল্যাগ চালু হওয়ার আগে থেকেই ব্যবহার
-  // করছেন), তাদের জোর করে মডাল দেখানো উচিত না — ব্যাকগ্রাউন্ডে flag
-  // silently সেট করে দেওয়া হচ্ছে, মডাল শুধু প্রকৃত নতুন/খালি অ্যাকাউন্টে
-  // দেখাবে।
   const hasExistingData = APP_STATE.pharmacyName && APP_STATE.pharmacyName !== 'আমার ফার্মেসি';
   if (hasExistingData) {
     apiSaveSettings({ onboardingComplete: true }).catch(() => {});
     APP_STATE.onboardingComplete = true;
-    return;
+    return false;
   }
 
   openOnboardingModal();
+  return true;
 }
 
 function openOnboardingModal() {
