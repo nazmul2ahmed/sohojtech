@@ -39,7 +39,7 @@ function renderSettingsModule() {
             <p class="text-[11px] text-slate-400 mt-1">যেসব ওষুধের নিজস্ব রি-অর্ডার লেভেল নেই, তাদের জন্য এই সীমা প্রযোজ্য হবে।</p>
           </div>
         </div>
-        <button id="settings-save-btn" onclick="saveSettingsForm()" class="w-full mt-4 bg-brand hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-sm">
+        <button id="settings-save-btn" onclick="saveSettingsForm()" class="btn btn-primary btn-block mt-4">
           <i class="fa-solid fa-floppy-disk mr-1"></i> সংরক্ষণ করুন
         </button>
       </div>
@@ -71,14 +71,14 @@ function renderSettingsModule() {
           <div class="flex gap-2">
             <input type="number" id="cash-balance-input" placeholder="প্রকৃত নগদ পরিমাণ" min="0" step="0.01"
               class="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
-            <button id="cash-balance-save-btn" onclick="saveCashBalanceManual()" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg whitespace-nowrap">সেট করুন</button>
+            <button id="cash-balance-save-btn" onclick="saveCashBalanceManual()" class="btn btn-primary btn-sm whitespace-nowrap">সেট করুন</button>
           </div>
           <p class="text-[11px] text-amber-600 mt-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>এটা বর্তমান হিসাবকৃত ব্যালান্সকে সম্পূর্ণ ওভাররাইট করবে — শুধু প্রথমবার শুরুর পয়েন্ট সেট করতে বা bookkeeping reconciliation-এর জন্য ব্যবহার করুন।</p>
         </div>
 
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-file-export text-brand mr-1"></i> ডেটা এক্সপোর্ট</h5>
-          <button onclick="exportToExcel()" class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm mb-2">
+          <button onclick="exportToExcel()" class="btn btn-primary btn-block mb-2">
             <i class="fa-solid fa-download mr-1"></i> Excel-এ ডাউনলোড করুন
           </button>
           <p class="text-[11px] text-slate-400">সব ডেটা একটা .xlsx ফাইলে (প্রতিটা টেবিল আলাদা শিটে)।</p>
@@ -87,7 +87,7 @@ function renderSettingsModule() {
         <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-red-600 mb-3"><i class="fa-solid fa-trash-can mr-1"></i> সম্পূর্ণ রিসেট</h5>
           <p class="text-[11px] text-slate-500 mb-3">প্র্যাকটিস ডেটা মুছে নতুন করে শুরু করতে চাইলে।</p>
-          <button onclick="openResetConfirm()" class="w-full border border-red-300 text-red-600 hover:bg-red-50 font-semibold py-2 rounded-lg text-sm">
+          <button onclick="openResetConfirm()" class="btn btn-danger-outline btn-block">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i> সব ডেটা মুছুন
           </button>
         </div>
@@ -280,8 +280,8 @@ function openResetConfirm() {
       <p class="text-xs text-slate-400 mb-2">নিশ্চিত করতে নিচে <b>RESET</b> লিখুন:</p>
       <input type="text" id="reset-confirm-input" class="w-full px-3 py-2 text-sm border border-red-300 rounded-lg mb-3 bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
       <div class="flex gap-2">
-        <button id="reset-confirm-btn" onclick="confirmReset()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg text-sm">মুছে ফেলুন</button>
-        <button onclick="document.getElementById('reset-modal').remove()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+        <button id="reset-confirm-btn" onclick="confirmReset()" class="btn btn-danger flex-1">মুছে ফেলুন</button>
+        <button onclick="document.getElementById('reset-modal').remove()" class="btn btn-secondary">বাতিল</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
