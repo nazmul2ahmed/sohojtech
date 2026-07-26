@@ -56,11 +56,11 @@ function renderMedicineModule() {
             oninput="onMedSearch(this.value)"
             class="w-full sm:w-56 px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
           <div class="flex items-center gap-2">
-            <button onclick="openMedicineForm(null)" class="flex-1 sm:flex-none bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
-              <i class="fa-solid fa-plus mr-1"></i> নতুন ওষুধ
+            <button onclick="openMedicineForm(null)" class="btn btn-primary btn-sm flex-1 sm:flex-none">
+              <i class="fa-solid fa-plus"></i> নতুন ওষুধ
             </button>
-            <button onclick="openGlobalMedSearch()" class="flex-1 sm:flex-none border border-brand text-brand text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
-            <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Master থেকে আমদানি
+            <button onclick="openGlobalMedSearch()" class="btn btn-brand-outline btn-sm flex-1 sm:flex-none">
+            <i class="fa-solid fa-cloud-arrow-down"></i> Master থেকে আমদানি
             </button>
           </div>
         </div>
@@ -188,8 +188,8 @@ function openMedicineForm(medId) {
         </div>
       </div>
       <div class="flex gap-2">
-        <button id="med-save-btn" onclick="saveMedicine(${isEdit ? `'${medId}'` : 'null'})" class="flex-1 bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">সংরক্ষণ করুন</button>
-        <button onclick="closeMedicineForm()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+        <button id="med-save-btn" onclick="saveMedicine(${isEdit ? `'${medId}'` : 'null'})" class="btn btn-primary flex-1">সংরক্ষণ করুন</button>
+        <button onclick="closeMedicineForm()" class="btn btn-secondary">বাতিল</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -302,7 +302,7 @@ function openGlobalMedSearch() {
       <input type="text" id="gm-search-input" placeholder="ওষুধের নাম টাইপ করুন..." oninput="onGlobalMedSearch(this.value)"
         class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white mb-3"/>
       <div id="gm-search-results" class="flex-1 overflow-y-auto"></div>
-      <button onclick="document.getElementById('gm-search-modal').remove()" class="mt-3 border border-slate-300 dark:border-slate-600 rounded-lg py-2 text-sm text-slate-600 dark:text-slate-300">বন্ধ করুন</button>
+      <button onclick="document.getElementById('gm-search-modal').remove()" class="btn btn-secondary btn-block mt-3">বন্ধ করুন</button>
     </div>`;
   document.body.appendChild(modal);
   openAppModal('gm-search-modal', () => document.getElementById('gm-search-modal')?.remove());
