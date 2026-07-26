@@ -87,12 +87,116 @@ function computeDashboardMetrics(state) {
   };
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅ আইটেম ১০: SMART SUGGESTION CARD — সম্পূর্ণ rule-based, কোনো AI/API
+// লাগে না। computeDashboardMetrics()-এর existing ডেটা থেকেই actionable
+// insight বের করে। ফ্রি-টিয়ারের সবার জন্য ডিফল্ট।
+// ════════════════════════════════════════════════════════════
+
+function getMonthRangeOffset(monthsOffset) {
+  const today = new Date();
+  const target = new Date(today.getFullYear(), today.getMonth() + monthsOffset, 1);
+  const year = target.getFullYear();
+  const month = target.getMonth();
+  const mm = String(month + 1).padStart(2, '0');
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return {
+    fromDate: `${year}-${mm}-01`,
+    toDate: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+function computeMonthlyGrossProfit(fromDate, toDate) {
+  const sales = APP_STATE.sales.filter(s => s.date >= fromDate && s.date <= toDate);
+  let revenue = 0, cogs = 0;
+  sales.forEach(sale => {
+    (sale.items || []).forEach(item => {
+      const gross = item.qty * item.price;
+      const disc = gross * (item.discountPct || 0) / 100;
+      revenue += (gross - disc);
+      cogs += item.qty * (item.costPrice || 0);
+    });
+  });
+  return round2(revenue - cogs);
+}
+
+function computeSmartSuggestions(state) {
+  const suggestions = [];
+
+  const outStock = state.inventory.filter(m => m.status === 'out');
+  if (outStock.length > 0) {
+    suggestions.push({ icon: 'fa-ban', color: 'red', text: `${outStock.length} টি ওষুধ স্টকশূন্য — দ্রুত ক্রয় এন্ট্রি করুন।` });
+  }
+
+  const lowStock = state.inventory.filter(m => m.status === 'low');
+  if (lowStock.length > 0) {
+    suggestions.push({ icon: 'fa-box-open', color: 'amber', text: `${lowStock.length} টি ওষুধের স্টক কমে যাচ্ছে — রি-অর্ডার করার কথা ভাবুন।` });
+  }
+
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const criticalExpiry = state.inventory
+    .filter(m => m.nearestExpiry)
+    .map(m => { const ed = parseExpiryDate(m.nearestExpiry); return ed ? { daysLeft: Math.ceil((ed - now) / 86400000) } : null; })
+    .filter(m => m && m.daysLeft <= 30 && m.daysLeft >= 0);
+  if (criticalExpiry.length > 0) {
+    suggestions.push({ icon: 'fa-triangle-exclamation', color: 'red', text: `${criticalExpiry.length} টি ওষুধের মেয়াদ ৩০ দিনের মধ্যে শেষ হচ্ছে — আগে বিক্রি/ফেরত দেওয়ার ব্যবস্থা করুন।` });
+  }
+
+  const dueCustomers = state.customers.filter(c => c.due > 0).sort((a, b) => b.due - a.due);
+  if (dueCustomers.length > 0) {
+    const top = dueCustomers[0];
+    suggestions.push({ icon: 'fa-hand-holding-dollar', color: 'amber', text: `${dueCustomers.length} জন গ্রাহকের বাকি আছে — সবচেয়ে বেশি ${esc(top.name)}-এর কাছে ৳${fmt(top.due)}।` });
+  }
+
+  const thisMonth = getMonthRangeOffset(0);
+  const lastMonth = getMonthRangeOffset(-1);
+  const thisMonthProfit = computeMonthlyGrossProfit(thisMonth.fromDate, thisMonth.toDate);
+  const lastMonthProfit = computeMonthlyGrossProfit(lastMonth.fromDate, lastMonth.toDate);
+  if (lastMonthProfit > 0) {
+    const pctChange = Math.round(((thisMonthProfit - lastMonthProfit) / lastMonthProfit) * 100);
+    if (Math.abs(pctChange) >= 5) {
+      suggestions.push({
+        icon: pctChange >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down',
+        color: pctChange >= 0 ? 'green' : 'red',
+        text: pctChange >= 0
+          ? `এই মাসে গত মাসের চেয়ে ${pctChange}% বেশি গ্রস প্রফিট — ভালো চলছে!`
+          : `এই মাসে গত মাসের চেয়ে ${Math.abs(pctChange)}% কম গ্রস প্রফিট — কারণ যাচাই করুন।`,
+      });
+    }
+  }
+
+  return suggestions.slice(0, 4);
+}
+
+function renderSmartSuggestionsCard(suggestions) {
+  if (!suggestions.length) return '';
+  const colorMap = {
+    red: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400',
+    amber: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400',
+    green: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400',
+  };
+  return `
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-5">
+      <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-lightbulb text-brand"></i> আজকের পরামর্শ
+      </h5>
+      <div class="space-y-2">
+        ${suggestions.map(s => `
+          <div class="flex items-start gap-3 px-3 py-2.5 rounded-lg border ${colorMap[s.color]}">
+            <i class="fa-solid ${s.icon} mt-0.5"></i>
+            <span class="text-sm">${s.text}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
 function renderDashboardModule() {
   const container = document.getElementById('dashboard-content');
   if (!container) return;
   const m = computeDashboardMetrics(APP_STATE);
   const netColor = m.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
   const cashColor = m.netCashFlow >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+  const suggestions = computeSmartSuggestions(APP_STATE);
 
   container.innerHTML = `
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -101,6 +205,8 @@ function renderDashboardModule() {
       ${kpiCard('আজ নগদ আদায় (Cash In)', '৳' + fmtK(m.cashIn), 'বিক্রয় নগদ + বাকি আদায়', 'fa-hand-holding-dollar', 'green')}
       ${kpiCard('আজ বাকি আদায়', '৳' + fmtK(m.dueCollectedToday), m.paymentCount + ' টি পেমেন্ট', 'fa-money-bill-transfer', 'orange')}
     </div>
+
+    ${renderSmartSuggestionsCard(suggestions)}
 
     <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-5">
       <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2">
