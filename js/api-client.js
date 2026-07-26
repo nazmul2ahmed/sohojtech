@@ -1357,6 +1357,7 @@ async function apiGetCompleteData() {
       pharmacyName: settings.pharmacyName || 'আমার ফার্মেসি', ownerName: settings.ownerName || '',
       phone: settings.phone || '', address: settings.address || '', lowStockLevel: settings.lowStockLevel || 10,
       onboardingComplete: settings.onboardingComplete || false, // ✅ নতুন — প্রথমবার-সেটআপ ফর্ম ট্র্যাকিং
+      reviewPromptDismissed: settings.reviewPromptDismissed || false, // ✅ আইটেম ১১
       historyCutoff: cutoff,
       capReached,
     };
