@@ -2,7 +2,7 @@
 
 const APP_CONFIG = {
   appName: 'SohojTech Pharmacy',
-  version: '5.0.0-pwa',
+  version: '5.1.0-pwa',
 
   firebase: {
     apiKey: "AIzaSyA7XWSz2nM_24QSabkORPIuJQqRc3IaTFU",
