@@ -36,17 +36,6 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   outline-offset: 1px;
 }
 
-/* ════════════════════════════════════════════════════════════
-   ✅ ৩.২: বাটন ক্লাস সিস্টেম — plain CSS (Tailwind CDN-এ external
-   stylesheet-এ @apply কাজ করে না, তাই hex/rem ভ্যালু direct লেখা)।
-   সব variant min-height:44px রাখে (touch-target — ৩.৩), disabled
-   state সবগুলোতে কমন প্যাটার্নে।
-
-   ব্যবহার: <button class="btn btn-primary">সংরক্ষণ করুন</button>
-   ছোট/inline প্রয়োজনে: <button class="btn btn-primary btn-sm">...</button>
-   আইকন-শুধু বর্গাকার বাটনের জন্য: <button class="btn-icon">...</button>
-   ════════════════════════════════════════════════════════════ */
-
 .btn {
   display: inline-flex;
   align-items: center;
@@ -65,18 +54,12 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .btn:disabled { opacity: .6; cursor: not-allowed; }
 .btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 
-/* ── ফুল-উইড্থ ভ্যারিয়েন্ট (ফর্ম সাবমিট বাটনে বহুল ব্যবহৃত) ── */
 .btn-block { width: 100%; }
-
-/* ── ছোট সাইজ (inline/টেবিল-হেডারে, কিন্তু তবুও ≥44px height থাকে —
-     শুধু padding/font কমে, touch-target কমে না) ── */
 .btn-sm { padding: .5rem 1rem; font-size: .8125rem; }
 
-/* ── PRIMARY (brand blue — সবচেয়ে বেশি ব্যবহৃত সাবমিট/প্রধান একশন) ── */
 .btn-primary { background: var(--brand); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: #1557a0; }
 
-/* ── SECONDARY (outline — বাতিল/সেকেন্ডারি একশন) ── */
 .btn-secondary {
   background: #fff; color: #475569; border-color: #cbd5e1;
 }
@@ -84,30 +67,21 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .dark .btn-secondary { background: #334155; color: #cbd5e1; border-color: #475569; }
 .dark .btn-secondary:hover:not(:disabled) { background: #3f4c60; }
 
-/* ── DANGER (লাল — ডিলিট/রিসেট/ধ্বংসাত্মক একশন) ── */
 .btn-danger { background: #dc2626; color: #fff; }
 .btn-danger:hover:not(:disabled) { background: #b91c1c; }
 
-/* ── DANGER-OUTLINE (কম-জোরালো সতর্কতা, যেমন "সব ডেটা মুছুন" আগে) ── */
 .btn-danger-outline { background: transparent; color: #dc2626; border-color: #fca5a5; }
 .btn-danger-outline:hover:not(:disabled) { background: #fef2f2; }
 
-/* ── SUCCESS (সবুজ — গ্রহণ/পরিশোধ/নিশ্চিতকরণ একশন) ── */
 .btn-success { background: #059669; color: #fff; }
 .btn-success:hover:not(:disabled) { background: #047857; }
 
-/* ── WARNING (amber — বাকি-ক্রয়/সতর্কতামূলক একশন, যেমন সাপ্লায়ার রিটার্ন) ── */
 .btn-warning { background: #f59e0b; color: #fff; }
 .btn-warning:hover:not(:disabled) { background: #d97706; }
 
-/* ── BRAND-OUTLINE (হালকা secondary-brand, যেমন "Master থেকে আমদানি") ── */
 .btn-brand-outline { background: transparent; color: var(--brand); border-color: var(--brand); }
 .btn-brand-outline:hover:not(:disabled) { background: rgba(26,110,189,.05); }
 
-/* ════════════════════════════════════════════════════════════
-   ✅ ৩.৩: আইকন-শুধু বর্গাকার বাটন (হেডার: calculator/dark-toggle/
-   sign-out) — আগে w-9 h-9 (৩৬px) ছিল, এখন ৪৪px টাচ-টার্গেট।
-   ════════════════════════════════════════════════════════════ */
 .btn-icon {
   display: inline-flex;
   align-items: center;
@@ -129,3 +103,43 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 
 .btn-icon-danger:hover { background: #fef2f2; color: #ef4444; }
 .dark .btn-icon-danger:hover { background: rgba(127,29,29,.2); color: #f87171; }
+
+/* ════════════════════════════════════════════════════════════
+   ✅ ৩.৪: ব্র্যান্ডেড বুট-এনিমেশন — #app-loading স্ক্রিনে
+   logo-reveal (bounce-in scale) + title/subtitle staggered
+   slide-up। প্রতি লগইনে/রিলোডে দেখাবে (boot polish, one-time
+   ফ্ল্যাগ না)। js/app.js-এর hideLoadingScreen() ন্যূনতম ১.৪
+   সেকেন্ড স্ক্রিন ধরে রাখে যাতে দ্রুত-লোডে (cache/fast net)
+   এনিমেশন অর্ধেক-চলা অবস্থায় কাটা না পড়ে ("ফ্ল্যাশ" এড়ানো)।
+   ════════════════════════════════════════════════════════════ */
+@keyframes bootLogoReveal {
+  0%   { opacity: 0; transform: scale(.55) translateY(10px); }
+  60%  { opacity: 1; transform: scale(1.08) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes bootSlideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.boot-logo {
+  animation: bootLogoReveal .6s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+.boot-title {
+  animation: bootSlideUp .5s ease both;
+  animation-delay: .25s;
+}
+.boot-subtitle {
+  animation: bootSlideUp .5s ease both;
+  animation-delay: .38s;
+}
+.boot-spinner-group {
+  animation: bootSlideUp .5s ease both;
+  animation-delay: .55s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-logo, .boot-title, .boot-subtitle, .boot-spinner-group {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
