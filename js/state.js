@@ -101,6 +101,7 @@ const NAV_CONFIG = [
     section: 'সহায়তা',
     items: [
       { id: 'contact', label: 'যোগাযোগ ও সাবস্ক্রিপশন', icon: 'fa-headset' },
+      { id: 'about', label: 'আমাদের সম্পর্কে', icon: 'fa-circle-info' },
     ],
   },
   {
