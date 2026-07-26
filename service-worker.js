@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v20'; 
+const CACHE_NAME = 'sohojtech-shell-v21'; 
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
@@ -12,7 +12,8 @@ const NETWORK_TIMEOUT_MS = 3000;
 const PRECACHE_URLS = [
   './', './index.html', './manifest.json', './css/styles.css', './js/tailwind-config.js',
   './js/config.js', './js/utils.js', './js/state.js', './js/ui-components.js', './js/receipt.js',
-  './js/subscription-promo.js', './js/modules/contact.js', './js/modules/onboarding.js', './js/modules/tour.js',
+  './js/subscription-promo.js', './js/modules/contact.js', './js/modules/about.js',
+  './js/modules/onboarding.js', './js/modules/tour.js',
   './js/modules/dashboard.js', './js/modules/pos.js', './js/modules/purchase.js',
   './js/modules/returns.js', './js/modules/opening.js', './js/modules/inventory.js',
   './js/modules/medicine.js', './js/modules/customers.js', './js/modules/suppliers.js',
