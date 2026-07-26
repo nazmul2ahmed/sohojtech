@@ -57,6 +57,7 @@ async function initApp() {
   setLoadingMessage('Ready.');
   hideLoadingScreen();
   showAppRoot();
+  if (typeof maybeShowOnboardingModal === 'function') maybeShowOnboardingModal(); // ✅ নতুন — প্রথমবার-সেটআপ ফর্ম
 }
 
 // ════════════════════════════════════════════════════════════
