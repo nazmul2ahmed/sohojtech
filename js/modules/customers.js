@@ -49,8 +49,8 @@ function renderCustomersModule() {
           <input type="text" id="cust-search" placeholder="নাম/ফোন খুঁজুন..." value="${esc(APP_STATE.custSearch)}"
             oninput="onCustSearch(this.value)"
             class="w-40 sm:w-56 px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
-          <button onclick="openCustomerForm(null)" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
-            <i class="fa-solid fa-plus mr-1"></i> নতুন গ্রাহক
+          <button onclick="openCustomerForm(null)" class="btn btn-primary btn-sm">
+            <i class="fa-solid fa-plus"></i> নতুন গ্রাহক
           </button>
         </div>
       </div>
@@ -148,8 +148,8 @@ function openCustomerForm(custId) {
         </div>
       </div>
       <div class="flex gap-2">
-        <button id="cust-save-btn" onclick="saveCustomer(${isEdit ? `'${custId}'` : 'null'})" class="flex-1 bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">সংরক্ষণ করুন</button>
-        <button onclick="closeCustomerForm()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+        <button id="cust-save-btn" onclick="saveCustomer(${isEdit ? `'${custId}'` : 'null'})" class="btn btn-primary flex-1">সংরক্ষণ করুন</button>
+        <button onclick="closeCustomerForm()" class="btn btn-secondary">বাতিল</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -260,8 +260,8 @@ function openCollectDue(custId) {
           class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
       </div>
       <div class="flex gap-2">
-        <button id="cd-save-btn" onclick="saveCollectDue('${custId}')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-lg text-sm">গ্রহণ করুন</button>
-        <button onclick="closeCollectDue()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+        <button id="cd-save-btn" onclick="saveCollectDue('${custId}')" class="btn btn-success flex-1">গ্রহণ করুন</button>
+        <button onclick="closeCollectDue()" class="btn btn-secondary">বাতিল</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
