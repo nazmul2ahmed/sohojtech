@@ -22,6 +22,7 @@ const APP_STATE = {
   ownerName: '',
   phone: '',
   address: '',
+  logoBase64: '',   // ✅ নতুন — আইটেম ১২: রিসিট লোগো (base64, Firestore config/settings-এ)
   lowStockLevel: 10,
   historyCutoff: '',
   olderHistoryLoaded: false,
