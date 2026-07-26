@@ -202,6 +202,7 @@ async function saveCashBalanceManual() {
 }
 
 async function saveSettingsForm() {
+  if (guardReadOnly()) return; 
   const name = document.getElementById('set-name').value.trim();
   if (!name) { toast('ফার্মেসির নাম দিন।', 'w'); return; }
 
@@ -289,6 +290,7 @@ function openResetConfirm() {
 }
 
 async function confirmReset() {
+  if (guardReadOnly()) return;
   if (document.getElementById('reset-confirm-input').value.trim() !== 'RESET') {
     toast('ঠিক করে "RESET" লিখুন।', 'w'); return;
   }
