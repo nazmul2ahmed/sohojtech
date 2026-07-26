@@ -57,7 +57,11 @@ async function initApp() {
   setLoadingMessage('Ready.');
   hideLoadingScreen();
   showAppRoot();
-  if (typeof maybeShowOnboardingModal === 'function') maybeShowOnboardingModal(); // ✅ নতুন — প্রথমবার-সেটআপ ফর্ম
+
+  // ✅ onboarding আর changelog একসাথে না দেখানোর জন্য সিকোয়েন্সড —
+  // onboarding modal খুললে changelog এই সেশনে চেক হবে না (পরের লগইনে হবে)
+  const onboardingShown = typeof maybeShowOnboardingModal === 'function' && maybeShowOnboardingModal();
+  if (!onboardingShown && typeof maybeShowChangelogModal === 'function') maybeShowChangelogModal();
 }
 
 // ════════════════════════════════════════════════════════════
