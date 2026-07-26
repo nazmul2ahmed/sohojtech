@@ -1,5 +1,12 @@
 'use strict';
 
+// ✅ ৩.৪: বুট-এনিমেশন ন্যূনতম প্রদর্শন-সময় — দ্রুত-লোডে (cache/fast net)
+// #app-loading স্ক্রিন যদি ১.৪ সেকেন্ডের কমে সরে যায়, তাহলে এনিমেশন
+// অর্ধেক-চলা অবস্থাতেই কাটা পড়ে "ফ্ল্যাশ" মনে হয়। hideLoadingScreen()
+// এই মিনিমাম মেনে চলে, actual data-load যত দ্রুতই হোক না কেন।
+const BOOT_ANIMATION_MIN_MS = 1400;
+const _bootStartTime = Date.now();
+
 document.addEventListener('DOMContentLoaded', () => {
   console.log(`${APP_CONFIG.appName} v${APP_CONFIG.version} booting...`);
   applyStoredTheme();
@@ -411,7 +418,13 @@ function closeSidebar() {
 // ════════════════════════════════════════════════════════════
 // LOADING / VISIBILITY
 // ════════════════════════════════════════════════════════════
-function hideLoadingScreen() { document.getElementById('app-loading')?.classList.add('hide'); }
+function hideLoadingScreen() {
+  const elapsed = Date.now() - _bootStartTime;
+  const remaining = Math.max(0, BOOT_ANIMATION_MIN_MS - elapsed);
+  setTimeout(() => {
+    document.getElementById('app-loading')?.classList.add('hide');
+  }, remaining);
+}
 function showAppRoot() { document.getElementById('app-root')?.classList.remove('hidden'); }
 function setLoadingMessage(msg) { setText('loading-message', msg); }
 
