@@ -104,6 +104,7 @@ async function submitOnboardingForm() {
     setText('sidebar-pharma-name', APP_STATE.pharmacyName);
     toast(`স্বাগতম, ${APP_STATE.pharmacyName}!`, 's');
     closeAppModal(); // ✅ history-back প্যাটার্ন — modalStack-এর closeFn কল করে DOM থেকে সরাবে
+    setTimeout(() => { if (typeof startGuidedTour === 'function') startGuidedTour(); }, 300); // ✅ নতুন — একই সেশনে অটো-ট্যুর
   } catch (err) {
     showFatalError('তথ্য সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
     btn.disabled = false;
