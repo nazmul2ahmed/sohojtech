@@ -20,6 +20,7 @@ const PRECACHE_URLS = [
   './js/modules/ads.js', './js/modules/staff.js',
   './js/db-indexeddb.js', './js/sync-engine.js',
   './js/auth.js', './js/api-client.js', './js/modules/analytics.js', './js/app.js',
+  './js/modules/tour.js', './js/modules/changelog.js',
   './assets/icons/icon-192.png', './assets/icons/icon-512.png',
 ];
 
