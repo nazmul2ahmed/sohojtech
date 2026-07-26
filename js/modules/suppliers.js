@@ -47,8 +47,8 @@ function renderSuppliersModule() {
           <input type="text" id="sup-search" placeholder="নাম/ফোন খুঁজুন..." value="${esc(APP_STATE.supSearch)}"
             oninput="onSupSearch(this.value)"
             class="w-40 sm:w-56 px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
-          <button onclick="openSupplierForm(null)" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg whitespace-nowrap">
-            <i class="fa-solid fa-plus mr-1"></i> নতুন সরবরাহকারী
+          <button onclick="openSupplierForm(null)" class="btn btn-primary btn-sm">
+            <i class="fa-solid fa-plus"></i> নতুন সরবরাহকারী
           </button>
         </div>
       </div>
@@ -146,8 +146,8 @@ function openSupplierForm(supId) {
         </div>
       </div>
       <div class="flex gap-2">
-        <button id="sup-save-btn" onclick="saveSupplier(${isEdit ? `'${supId}'` : 'null'})" class="flex-1 bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">সংরক্ষণ করুন</button>
-        <button onclick="closeSupplierForm()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+        <button id="sup-save-btn" onclick="saveSupplier(${isEdit ? `'${supId}'` : 'null'})" class="btn btn-primary flex-1">সংরক্ষণ করুন</button>
+        <button onclick="closeSupplierForm()" class="btn btn-secondary">বাতিল</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -258,8 +258,8 @@ function openPayPayable(supId) {
           class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
       </div>
       <div class="flex gap-2">
-        <button id="pp-save-btn" onclick="savePayPayable('${supId}')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-lg text-sm">পরিশোধ করুন</button>
-        <button onclick="closePayPayable()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+        <button id="pp-save-btn" onclick="savePayPayable('${supId}')" class="btn btn-success flex-1">পরিশোধ করুন</button>
+        <button onclick="closePayPayable()" class="btn btn-secondary">বাতিল</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
