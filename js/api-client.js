@@ -1356,6 +1356,7 @@ async function apiGetCompleteData() {
       openingEntries: obSnap.docs.map(d => d.data()),
       pharmacyName: settings.pharmacyName || 'আমার ফার্মেসি', ownerName: settings.ownerName || '',
       phone: settings.phone || '', address: settings.address || '', lowStockLevel: settings.lowStockLevel || 10,
+      onboardingComplete: settings.onboardingComplete || false, // ✅ নতুন — প্রথমবার-সেটআপ ফর্ম ট্র্যাকিং
       historyCutoff: cutoff,
       capReached,
     };
