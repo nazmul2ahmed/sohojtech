@@ -48,7 +48,7 @@ function renderStaffModule() {
           </select>
         </div>
       </div>
-      <button id="staff-invite-btn" onclick="submitStaffInvite()" class="mt-3 bg-brand hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded-lg text-sm">
+      <button id="staff-invite-btn" onclick="submitStaffInvite()" class="btn btn-primary mt-3">
         <i class="fa-solid fa-paper-plane mr-1"></i> ইনভাইট পাঠান
       </button>
     </div>
