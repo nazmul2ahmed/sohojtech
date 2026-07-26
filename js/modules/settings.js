@@ -103,6 +103,9 @@ function renderSettingsModule() {
             <a href="privacy.html" target="_blank" class="text-[11px] text-brand hover:underline">গোপনীয়তা নীতি</a>
             <a href="terms.html" target="_blank" class="text-[11px] text-brand hover:underline">ব্যবহারের শর্তাবলী</a>
           </div>
+          <button onclick="startGuidedTour()" class="btn btn-brand-outline btn-sm btn-block mt-3">
+            <i class="fa-solid fa-map-signs mr-1"></i> গাইডেড ট্যুর আবার দেখুন
+          </button>
         </div>
       </div>
     </div>
