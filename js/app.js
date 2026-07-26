@@ -62,6 +62,7 @@ async function initApp() {
   // onboarding modal খুললে changelog এই সেশনে চেক হবে না (পরের লগইনে হবে)
   const onboardingShown = typeof maybeShowOnboardingModal === 'function' && maybeShowOnboardingModal();
   if (!onboardingShown && typeof maybeShowChangelogModal === 'function') maybeShowChangelogModal();
+  if (typeof maybeScheduleReviewPrompt === 'function') maybeScheduleReviewPrompt(); // ✅ আইটেম ১১
 }
 
 // ════════════════════════════════════════════════════════════
