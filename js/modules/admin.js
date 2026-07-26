@@ -47,7 +47,7 @@ function updateAdminTabsUI() {
     if (!btn) return;
     btn.textContent = labels[k];
     const active = APP_STATE.adminTab === k;
-    btn.className = `px-4 py-1.5 rounded-lg text-xs font-semibold border transition ${active ? 'bg-brand text-white border-brand' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'}`;
+    btn.className = `btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`;
   });
 }
 
@@ -184,7 +184,7 @@ function renderGlobalMedUploader() {
     </details>
 
     <div id="gm-upload-status" class="text-xs text-slate-500 mb-2"></div>
-    <button onclick="uploadGlobalMedCsv()" id="gm-upload-btn" class="bg-brand hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">আপলোড করুন</button>
+    <button onclick="uploadGlobalMedCsv()" id="gm-upload-btn" class="btn btn-primary">আপলোড করুন</button>
   `;
   box.appendChild(div);
 }
