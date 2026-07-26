@@ -77,6 +77,20 @@ function renderSettingsModule() {
         </div>
 
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-image text-brand"></i> রিসিট লোগো</h5>
+          <p class="text-[11px] text-slate-400 mb-3">প্রিন্ট ও WhatsApp রিসিটে দেখাবে। ছবি স্বয়ংক্রিয়ভাবে ছোট করে Firestore-এ সংরক্ষণ হয় (Firebase Storage/Blaze লাগে না)।</p>
+          <div id="logo-preview-box" class="mb-3"></div>
+          <div id="logo-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
+          <input type="file" id="logo-file-input" accept="image/*" class="hidden" onchange="onLogoFileSelect(event)"/>
+          <div class="flex gap-2">
+            <label for="logo-file-input" class="btn btn-brand-outline btn-sm flex-1 cursor-pointer text-center">
+              <i class="fa-solid fa-upload mr-1"></i> ছবি বাছাই করুন
+            </label>
+            <button id="logo-remove-btn" onclick="removeLogo()" class="btn btn-danger-outline btn-sm hidden">মুছুন</button>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-file-export text-brand mr-1"></i> ডেটা এক্সপোর্ট</h5>
           <button onclick="exportToExcel()" class="btn btn-primary btn-block mb-2">
             <i class="fa-solid fa-download mr-1"></i> Excel-এ ডাউনলোড করুন
@@ -114,6 +128,7 @@ function renderSettingsModule() {
   updateSettingsDbStatusCard();
   refreshSettingsSyncStatusCard();
   refreshCashBalanceCard();
+  renderLogoPreview();
 }
 
 // ✅ ধাপ ২২: আগে হার্ডকোডেড "Firestore সংযুক্ত" (সবুজ, সবসময়) দেখাত —
@@ -250,6 +265,98 @@ async function saveSettingsForm() {
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> সংরক্ষণ করুন';
   }
 }
+
+// ════════════════════════════════════════════════════════════
+// ✅ আইটেম ১২: রিসিট লোগো — client-side compress + Firestore
+// config/settings-এ base64 হিসেবে সংরক্ষণ (Storage/Blaze লাগে না)
+// ════════════════════════════════════════════════════════════
+const LOGO_MAX_DIM = 160;
+const LOGO_JPEG_QUALITY = 0.6;
+const LOGO_MAX_BYTES = 200 * 1024; // ২০০ KB — Firestore ১ MiB ডকুমেন্ট-লিমিটের তুলনায় নিরাপদ মার্জিন
+
+function compressLogoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('শুধু ছবি ফাইল (JPG/PNG) আপলোড করুন।'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        const scale = Math.min(1, LOGO_MAX_DIM / Math.max(w, h));
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); // transparency থাকলে সাদা ব্যাকগ্রাউন্ড
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', LOGO_JPEG_QUALITY));
+      };
+      img.onerror = () => reject(new Error('ছবি পড়া যায়নি — ফাইলটা corrupted হতে পারে।'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('ফাইল রিড করতে ব্যর্থ।'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderLogoPreview() {
+  const box = document.getElementById('logo-preview-box');
+  const removeBtn = document.getElementById('logo-remove-btn');
+  if (!box) return;
+  if (APP_STATE.logoBase64) {
+    box.innerHTML = `<img src="${APP_STATE.logoBase64}" class="h-16 w-16 object-contain border border-slate-200 dark:border-slate-600 rounded-lg bg-white p-1"/>`;
+    removeBtn?.classList.remove('hidden');
+  } else {
+    box.innerHTML = `<div class="h-16 w-16 flex items-center justify-center border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-300 text-[10px] text-center px-1">কোনো লোগো নেই</div>`;
+    removeBtn?.classList.add('hidden');
+  }
+}
+
+async function onLogoFileSelect(event) {
+  const errEl = document.getElementById('logo-error');
+  errEl.classList.add('hidden');
+
+  if (guardReadOnly()) { event.target.value = ''; return; }
+  const file = event.target.files[0];
+  if (!file) return;
+
+  try {
+    const dataUrl = await compressLogoFile(file);
+    if (dataUrl.length > LOGO_MAX_BYTES) {
+      throw new Error('কম্প্রেস করার পরও ছবির সাইজ বড় — আরও সহজ/ছোট একটা লোগো ছবি ব্যবহার করুন।');
+    }
+    const res = await apiSaveSettings({ logoBase64: dataUrl });
+    if (!res.success) throw new Error(res.message);
+
+    APP_STATE.logoBase64 = dataUrl;
+    renderLogoPreview();
+    toast('লোগো সংরক্ষণ হয়েছে।', 's');
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    event.target.value = '';
+  }
+}
+
+async function removeLogo() {
+  if (guardReadOnly()) return;
+  if (!confirm('লোগো মুছে ফেলতে চান?')) return;
+  try {
+    const res = await apiSaveSettings({ logoBase64: '' });
+    if (!res.success) return toast(res.message, 'w');
+    APP_STATE.logoBase64 = '';
+    renderLogoPreview();
+    toast('লোগো মুছে ফেলা হয়েছে।', 's');
+  } catch (err) {
+    showFatalError('লোগো মুছতে সমস্যা:\n' + humanizeError(err), err);
+  }
+}
+
 function exportToExcel() {
   const wb = XLSX.utils.book_new();
   const sheets = {
