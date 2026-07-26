@@ -257,8 +257,8 @@ function openBatchEdit(medId, batchId) {
           <input type="number" id="be-sell" value="${batch.sell}" min="0" step="0.01" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/></div>
       </div>
       <div class="flex gap-2">
-        <button id="be-save-btn" onclick="saveBatchEdit('${medId}','${batchId}')" class="flex-1 bg-brand hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">সংরক্ষণ করুন</button>
-        <button onclick="closeBatchEdit()" class="px-5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300">বাতিল</button>
+        <button id="be-save-btn" onclick="saveBatchEdit('${medId}','${batchId}')" class="btn btn-primary flex-1">সংরক্ষণ করুন</button>
+        <button onclick="closeBatchEdit()" class="btn btn-secondary">বাতিল</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
