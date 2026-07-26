@@ -313,6 +313,13 @@ function renderTabPanels() {
         <div id="contact-content"></div>
       </div>`;
     }
+    // ১৭. আমাদের সম্পর্কে (About) ট্যাব
+    if (item.id === 'about') {
+      return `<div id="tab-about" class="tab-panel hidden tab-enter">
+        <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
+        <div id="about-content"></div>
+      </div>`;
+    }
     // . বাকি সব ডিফল্ট/প্লেসহোল্ডার ট্যাব
     return `<div id="tab-${item.id}" class="tab-panel hidden tab-enter">
       <div class="mb-5">
@@ -393,6 +400,7 @@ function goTab(tabId, opts = {}) {
     if (tabId === 'admin') { renderAdminModule(); }
     if (tabId === 'ads') { renderAdsModule(); }
     if (tabId === 'contact') { renderContactModule(); }
+    if (tabId === 'about') { renderAboutModule(); }
     if (tabId === 'staff') { renderStaffModule(); }
   } catch (err) {
     showFatalError('goTab("' + tabId + '") এ সমস্যা:\n' + err.message);
