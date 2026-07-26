@@ -17,6 +17,7 @@ function buildReceiptConfig(type, doc) {
     name: APP_STATE.pharmacyName || 'ফার্মেসি',
     address: APP_STATE.address || '',
     phone: APP_STATE.phone || '',
+    logoBase64: APP_STATE.logoBase64 || '', // ✅ নতুন
   };
   if (type === 'sale') return buildSaleReceiptConfig(doc, pharmacy);
   if (type === 'purchase') return buildPurchaseReceiptConfig(doc, pharmacy);
@@ -118,6 +119,8 @@ function printReceiptHTML(config) {
 
 function buildReceiptHTMLContent(config) {
   const p = config.pharmacy;
+  const logoHTML = p.logoBase64 ? `<div class="r-center"><img src="${p.logoBase64}" class="r-logo"/></div>` : '';
+
   const itemRows = config.items.map(item => `
     <div class="r-item-name">${esc(item.name)}</div>
     <div class="r-item-line">
@@ -133,6 +136,7 @@ function buildReceiptHTMLContent(config) {
   const noteRows = (config.notes || []).map(n => `<div class="r-note">${esc(n)}</div>`).join('');
 
   return `
+    ${logoHTML}
     <div class="r-center r-bold r-name">${esc(p.name)}</div>
     ${p.address ? `<div class="r-center r-small">${esc(p.address)}</div>` : ''}
     ${p.phone ? `<div class="r-center r-small">${esc(p.phone)}</div>` : ''}
@@ -169,6 +173,7 @@ function ensureReceiptPrintStyles() {
       .r-bold { font-weight: 700; }
       .r-small { font-size: 9px; }
       .r-name { font-size: 14px; }
+      .r-logo { max-width: 60mm; max-height: 20mm; margin: 0 auto 4px; display: block; }
       .r-dashed { border-top: 1px dashed #000; margin: 4px 0; }
       .r-meta { display: flex; justify-content: space-between; }
       .r-item-name { font-weight: 600; }
@@ -184,12 +189,25 @@ function ensureReceiptPrintStyles() {
 // ────────────────────────────────────────────────────────────
 // CANVAS RENDER — WhatsApp শেয়ারের জন্য ইমেজ তৈরি
 // ────────────────────────────────────────────────────────────
-function renderReceiptCanvas(config) {
+function loadImagePromise(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('লোগো ছবি লোড করা যায়নি।'));
+    img.src = src;
+  });
+}
+
+// ✅ ফিক্স: এখন async — লোগো (base64) থাকলে সেটা লোড হওয়া পর্যন্ত অপেক্ষা করে,
+// তারপর ক্যানভাসে আঁকে। লোগো না থাকলে বা লোড ব্যর্থ হলে (নেটওয়ার্ক-নির্ভরতা নেই,
+// data URI বলে ব্যর্থ হওয়ার সুযোগ কম) বাকি রিসিট স্বাভাবিকভাবেই তৈরি হবে।
+async function renderReceiptCanvas(config) {
   const width = RECEIPT_CANVAS_WIDTH;
   const padding = 16;
   const lineHeight = 20;
   const estimatedLines = 12 + config.items.length * 2 + config.totals.length + (config.notes || []).length;
-  const draftHeight = padding * 2 + estimatedLines * lineHeight;
+  const logoReserve = config.pharmacy.logoBase64 ? 90 : 0;
+  const draftHeight = padding * 2 + estimatedLines * lineHeight + logoReserve;
 
   const draft = document.createElement('canvas');
   draft.width = width; draft.height = draftHeight;
@@ -211,6 +229,20 @@ function renderReceiptCanvas(config) {
     while (t.length > 3 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
     return t + '…';
   };
+
+  // ✅ নতুন — লোগো, সবার উপরে, কেন্দ্রীভূত, সর্বোচ্চ ৭০px উচ্চতা
+  if (config.pharmacy.logoBase64) {
+    try {
+      const logoImg = await loadImagePromise(config.pharmacy.logoBase64);
+      const maxLogoH = 70, maxLogoW = 140;
+      const scale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height, 1);
+      const lw = logoImg.width * scale, lh = logoImg.height * scale;
+      ctx.drawImage(logoImg, centerX - lw / 2, y, lw, lh);
+      y += lh + 8;
+    } catch (err) {
+      console.warn('রিসিট লোগো আঁকতে ব্যর্থ (বাকি রিসিট চলবে):', err);
+    }
+  }
 
   ctx.font = `bold 16px ${RECEIPT_FONT}`; ctx.textAlign = 'center';
   ctx.fillText(config.pharmacy.name, centerX, y); y += lineHeight + 2;
@@ -270,7 +302,6 @@ function renderReceiptCanvas(config) {
   ctx.font = `10px ${RECEIPT_FONT}`; ctx.textAlign = 'center';
   ctx.fillText('ধন্যবাদ!', centerX, y); y += lineHeight;
 
-  // ✅ প্রকৃত ব্যবহৃত height অনুযায়ী resize — নিচে অতিরিক্ত সাদা জায়গা এড়াতে
   const final = document.createElement('canvas');
   final.width = width; final.height = y + padding;
   const fctx = final.getContext('2d');
@@ -282,8 +313,9 @@ function renderReceiptCanvas(config) {
 // ────────────────────────────────────────────────────────────
 // SHARE — Web Share API (files), fallback: ডাউনলোড
 // ────────────────────────────────────────────────────────────
-function shareReceiptImage(config) {
-  const canvas = renderReceiptCanvas(config);
+// ✅ ফিক্স: renderReceiptCanvas() এখন async, তাই এটাও async করে await করতে হলো
+async function shareReceiptImage(config) {
+  const canvas = await renderReceiptCanvas(config);
   canvas.toBlob(async (blob) => {
     if (!blob) { toast('রিসিট ইমেজ তৈরি করতে সমস্যা হয়েছে।', 'e'); return; }
     const fileName = `receipt-${config.refNo}.png`;
