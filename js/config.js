@@ -22,7 +22,7 @@ const APP_CONFIG = {
   },
   COMPANY_LINKS: {
     website: '', // এখানে ওয়েবসাইট URL বসান (থাকলে), না থাকলে খালি রাখুন
-    facebook: '', // ফেসবুক পেজ URL
+    facebook: 'https://www.facebook.com/profile.php?id=61584743159189', // ফেসবুক পেজ URL
   },
 
   // ✅ আইটেম ৯: About ট্যাবে ক্রস-প্রমোশন — status: 'current' | 'available' | 'coming_soon'
