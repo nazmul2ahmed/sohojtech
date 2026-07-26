@@ -20,6 +20,22 @@ const APP_CONFIG = {
     bkash: '01346553350',
     nagad: '01346553350',
   },
+  COMPANY_LINKS: {
+    website: '', // এখানে ওয়েবসাইট URL বসান (থাকলে), না থাকলে খালি রাখুন
+    facebook: '', // ফেসবুক পেজ URL
+  },
+
+  // ✅ আইটেম ৯: About ট্যাবে ক্রস-প্রমোশন — status: 'current' | 'available' | 'coming_soon'
+  PRODUCTS: [
+    {
+      name: 'SohojTech Pharmacy',
+      description: 'ফার্মেসি ম্যানেজমেন্ট — POS, ইনভেন্টরি, হিসাব, সব একসাথে।',
+      status: 'current',
+      url: '',
+    },
+    // ভবিষ্যতে নতুন প্রোডাক্ট এলে এখানে নতুন এন্ট্রি যোগ করুন, যেমন:
+    // { name: 'SohojTech ...', description: '...', status: 'coming_soon', url: '' },
+  ],
   TRIAL_DAYS: 15,
 
   features: {
