@@ -1155,6 +1155,34 @@ async function apiSaveSettings(data) {
 }
 
 // ────────────────────────────────────────────────────────────
+// ✅ [আইটেম ১৩ - Unsubscribe A] EMAIL PREFERENCES — users/{uid} রুট
+// ডকুমেন্টে সংরক্ষিত (Code.gs এই একই পাথ থেকে পড়ে/লেখে)। শুধু owner
+// নিজে নিজের প্রোফাইল বদলাতে পারবেন (Firestore rules-এ isOwnerUid গার্ড)।
+// ────────────────────────────────────────────────────────────
+async function apiGetEmailPreferences() {
+  try {
+    const doc = await fbDb.collection('users').doc(APP_STATE.currentUser.uid).get();
+    const prefs = doc.exists ? (doc.data().emailPreferences || {}) : {};
+    return { success: true, unsubscribedAll: !!prefs.unsubscribedAll };
+  } catch (err) {
+    return { success: false, message: humanizeError(err), unsubscribedAll: false };
+  }
+}
+
+async function apiSetEmailUnsubscribed(flag) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    const ref = fbDb.collection('users').doc(APP_STATE.currentUser.uid);
+    const doc = await ref.get();
+    const existing = doc.exists ? (doc.data().emailPreferences || {}) : {};
+    await ref.update({ emailPreferences: { ...existing, unsubscribedAll: !!flag } });
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: humanizeError(err) };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
 // OPENING BALANCE — apiSubmitOpeningEntry (✅ computeInventoryDerivedFields ব্যবহার করছে)
 // ────────────────────────────────────────────────────────────
 async function apiSubmitOpeningEntry(entry) {
