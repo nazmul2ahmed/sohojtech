@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ইমেইল বন্ধ করুন — SohojTech Pharmacy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="css/styles.css"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="js/tailwind-config.js?v=20260727"></script>
+<link rel="icon" href="assets/icons/icon-192.png">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="js/config.js?v=20260727"></script>
+</head>
+<body class="bg-slate-50 text-slate-700 font-sans leading-relaxed min-h-screen flex flex-col">
+
+<header class="bg-[#0D1B2A] text-white px-6 py-5">
+  <div class="max-w-lg mx-auto flex items-center gap-3">
+    <div class="w-10 h-10 rounded-xl bg-brand flex items-center justify-center flex-shrink-0">
+      <span class="text-lg">💊</span>
+    </div>
+    <div>
+      <div class="font-bold text-sm">SohojTech Pharmacy</div>
+      <div class="text-white/40 text-xs">ইমেইল বিজ্ঞপ্তি</div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-lg mx-auto px-6 py-10 flex-1 w-full">
+  <div id="us-box" class="bg-white border border-slate-200 rounded-xl p-6 text-center">
+    <div id="us-loading">
+      <i class="fa-solid fa-spinner fa-spin text-2xl text-brand mb-3"></i>
+      <p class="text-sm text-slate-500">লোড হচ্ছে...</p>
+    </div>
+  </div>
+</main>
+
+<footer class="text-center text-xs text-slate-400 py-8">
+  &copy; ২০২৬ SohojTech Pharmacy
+</footer>
+
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const uid = params.get('uid');
+  const token = params.get('token');
+  const box = document.getElementById('us-box');
+
+  function render(html) { box.innerHTML = html; }
+
+  if (!uid || !token) {
+    render(`
+      <i class="fa-solid fa-triangle-exclamation text-2xl text-amber-500 mb-3"></i>
+      <h1 class="text-lg font-bold text-slate-800 mb-2">লিংক অসম্পূর্ণ</h1>
+      <p class="text-sm text-slate-500">এই লিংকে প্রয়োজনীয় তথ্য নেই। ইমেইলের মূল লিংকে সরাসরি ক্লিক করুন, কপি-পেস্টে অংশ বাদ পড়ে থাকতে পারে।</p>
+    `);
+  } else {
+    render(`
+      <i class="fa-solid fa-envelope-circle-check text-2xl text-brand mb-3"></i>
+      <h1 class="text-lg font-bold text-slate-800 mb-2">ইমেইল বিজ্ঞপ্তি বন্ধ করতে চান?</h1>
+      <p class="text-sm text-slate-500 mb-5">নিচে নিশ্চিত করলে ট্রায়াল/সাবস্ক্রিপশন রিমাইন্ডার ও অন্যান্য লাইফসাইকেল ইমেইল আর পাঠানো হবে না। যেকোনো সময় অ্যাপের Settings থেকে আবার চালু করতে পারবেন।</p>
+      <button id="us-confirm-btn" class="bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-sm px-5 py-2.5 rounded-lg border border-red-200">
+        হ্যাঁ, ইমেইল বন্ধ করুন
+      </button>
+    `);
+
+    document.getElementById('us-confirm-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('us-confirm-btn');
+      btn.disabled = true;
+      btn.textContent = 'প্রক্রিয়াকরণ হচ্ছে...';
+      try {
+        firebase.initializeApp(APP_CONFIG.firebase);
+        const db = firebase.firestore();
+        await db.collection('unsubscribeRequests').doc(token).set({
+          uid: uid,
+          requestedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+        render(`
+          <i class="fa-solid fa-circle-check text-2xl text-emerald-500 mb-3"></i>
+          <h1 class="text-lg font-bold text-slate-800 mb-2">অনুরোধ গ্রহণ করা হয়েছে</h1>
+          <p class="text-sm text-slate-500">২৪ ঘণ্টার মধ্যে (পরের দৈনিক প্রসেসিং-এ) এটা কার্যকর হবে। এর মধ্যে হয়তো ১-২টা ইমেইল আরও যেতে পারে।</p>
+        `);
+      } catch (err) {
+        render(`
+          <i class="fa-solid fa-circle-exclamation text-2xl text-red-500 mb-3"></i>
+          <h1 class="text-lg font-bold text-slate-800 mb-2">সমস্যা হয়েছে</h1>
+          <p class="text-sm text-slate-500 mb-2">অনুরোধ পাঠানো যায়নি। একটু পর আবার চেষ্টা করুন।</p>
+          <p class="text-xs text-slate-400 font-mono">${err.message || ''}</p>
+        `);
+      }
+    });
+  }
+</script>
+
+</body>
+</html>
