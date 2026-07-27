@@ -8,6 +8,13 @@
 // অ্যাক্টিভেশন এখনো ম্যানুয়াল (admin.js-এর approveWithDuration())।
 // ════════════════════════════════════════════════════════════
 
+// সংখ্যাকে বাংলা অঙ্কে (০-৯) দেখানোর জন্য — locale-independent char-map,
+// তাই bn-BD locale সাপোর্ট না থাকা ডিভাইস/ব্রাউজারেও নিশ্চিতভাবে কাজ করবে
+function toBanglaDigits(n) {
+  const banglaDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  return String(n).replace(/[0-9]/g, (d) => banglaDigits[d]);
+}
+
 const SUBSCRIPTION_PLANS = [
   { id: '1m', label: '১ মাস',  months: 1,  price: 399,  badge: null },
   { id: '3m', label: '৩ মাস',  months: 3,  price: 1099, badge: null },
@@ -62,7 +69,7 @@ function openSubscriptionPromo(context = 'trial', opts = {}) {
   const isRenewal = context === 'renewal';
   const title = isRenewal ? 'আপনার সাবস্ক্রিপশন শীঘ্রই শেষ হচ্ছে' : 'সীমাহীন ব্যবহারের জন্য সাবস্ক্রাইব করুন';
   const subtitle = isRenewal
-    ? `আর ${opts.daysLeft ?? ''} দিনে মেয়াদ শেষ — এখনই রিনিউ করে নিরবচ্ছিন্ন সেবা নিশ্চিত করুন।`
+    ? `আর ${opts.daysLeft != null ? toBanglaDigits(opts.daysLeft) : ''} দিনে মেয়াদ শেষ — এখনই রিনিউ করে নিরবচ্ছিন্ন সেবা নিশ্চিত করুন।`
     : 'ট্রায়াল শেষ হওয়ার আগেই একটা প্ল্যান বেছে নিন, কোনো বাধা ছাড়াই ব্যবহার চালিয়ে যান।';
 
   const modal = document.createElement('div');
@@ -115,7 +122,7 @@ function renderPlanCard(plan, isRenewal) {
         <div class="text-2xl font-extrabold text-slate-800 dark:text-white mt-1">৳${fmt(plan.price)}</div>
         <div class="text-[11px] text-slate-400 mt-0.5">
           ≈ ৳${fmt(perMonth)}/মাস
-          ${savePercent > 0 ? `<span class="text-emerald-600 font-semibold">(${savePercent}% সাশ্রয়)</span>` : ''}
+          ${savePercent > 0 ? `<span class="text-emerald-600 font-semibold">(${toBanglaDigits(savePercent)}% সাশ্রয়)</span>` : ''}
         </div>
       </div>
       <div class="flex gap-2 mt-4">
