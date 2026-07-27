@@ -59,6 +59,15 @@ function renderSettingsModule() {
           </div>
         </div>
 
+        ${!APP_STATE.isStaffMember ? `
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-envelope-open-text text-slate-400"></i> ইমেইল বিজ্ঞপ্তি</h5>
+          <p class="text-[11px] text-slate-400 mb-3">ট্রায়াল/সাবস্ক্রিপশন রিমাইন্ডার, পেমেন্ট-কনফার্মেশন ইত্যাদি ইমেইল — চাইলে বন্ধ করতে পারেন। ইমেইলের ফুটারেও একই টগলের একটা এক-ক্লিক লিংক আছে।</p>
+          <div id="settings-email-pref" class="text-xs text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-slate-300 animate-pulse inline-block"></span> লোড হচ্ছে...
+          </div>
+        </div>` : ''}
+
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-sack-dollar text-brand"></i> নগদ ব্যালান্স</h5>
           <p class="text-[11px] text-slate-400 mb-3">ধাপ ৩২ থেকে প্রতিটা নগদ-প্রভাবিত লেনদেন স্বয়ংক্রিয়ভাবে ট্র্যাক হয়। প্রথমবার ব্যবহারের আগে নিচে আপনার হাতে/ব্যাংকে থাকা প্রকৃত নগদ পরিমাণ (physical count) বসিয়ে শুরুর পয়েন্ট সেট করুন।</p>
@@ -74,20 +83,6 @@ function renderSettingsModule() {
             <button id="cash-balance-save-btn" onclick="saveCashBalanceManual()" class="btn btn-primary btn-sm whitespace-nowrap">সেট করুন</button>
           </div>
           <p class="text-[11px] text-amber-600 mt-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>এটা বর্তমান হিসাবকৃত ব্যালান্সকে সম্পূর্ণ ওভাররাইট করবে — শুধু প্রথমবার শুরুর পয়েন্ট সেট করতে বা bookkeeping reconciliation-এর জন্য ব্যবহার করুন।</p>
-        </div>
-
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-image text-brand"></i> রিসিট লোগো</h5>
-          <p class="text-[11px] text-slate-400 mb-3">প্রিন্ট ও WhatsApp রিসিটে দেখাবে। ছবি স্বয়ংক্রিয়ভাবে ছোট করে Firestore-এ সংরক্ষণ হয় (Firebase Storage/Blaze লাগে না)।</p>
-          <div id="logo-preview-box" class="mb-3"></div>
-          <div id="logo-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
-          <input type="file" id="logo-file-input" accept="image/*" class="hidden" onchange="onLogoFileSelect(event)"/>
-          <div class="flex gap-2">
-            <label for="logo-file-input" class="btn btn-brand-outline btn-sm flex-1 cursor-pointer text-center">
-              <i class="fa-solid fa-upload mr-1"></i> ছবি বাছাই করুন
-            </label>
-            <button id="logo-remove-btn" onclick="removeLogo()" class="btn btn-danger-outline btn-sm hidden">মুছুন</button>
-          </div>
         </div>
 
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
@@ -128,7 +123,51 @@ function renderSettingsModule() {
   updateSettingsDbStatusCard();
   refreshSettingsSyncStatusCard();
   refreshCashBalanceCard();
-  renderLogoPreview();
+  if (!APP_STATE.isStaffMember) refreshEmailPrefCard();
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ [আইটেম ১৩ - Unsubscribe A] EMAIL PREFERENCE CARD
+// ────────────────────────────────────────────────────────────
+async function refreshEmailPrefCard() {
+  const box = document.getElementById('settings-email-pref');
+  if (!box) return;
+  try {
+    const res = await apiGetEmailPreferences();
+    if (!document.getElementById('settings-email-pref')) return; // ট্যাব বদলে গেলে safe no-op
+    if (!res.success) {
+      box.innerHTML = `<span class="text-xs text-slate-400">লোড করা যায়নি</span>`;
+      return;
+    }
+    const subscribed = !res.unsubscribedAll;
+    box.innerHTML = `
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <span class="text-xs font-semibold ${subscribed ? 'text-emerald-600' : 'text-slate-400'}">
+          ${subscribed ? '✅ সক্রিয় — রিমাইন্ডার/আপডেট ইমেইল পাবেন' : '🔕 বন্ধ — কোনো লাইফসাইকেল ইমেইল যাবে না'}
+        </span>
+        <button id="email-pref-toggle-btn" onclick="toggleEmailUnsubscribe(${subscribed})" class="btn btn-sm ${subscribed ? 'btn-danger-outline' : 'btn-brand-outline'}">
+          ${subscribed ? 'বন্ধ করুন' : 'চালু করুন'}
+        </button>
+      </div>`;
+  } catch (err) {
+    box.innerHTML = `<span class="text-xs text-slate-400">লোড ব্যর্থ</span>`;
+  }
+}
+
+async function toggleEmailUnsubscribe(currentlySubscribed) {
+  if (guardReadOnly()) return;
+  const newUnsubscribedFlag = currentlySubscribed; // সাবস্ক্রাইবড থাকলে → নতুন স্টেট: unsubscribed = true
+  const btn = document.getElementById('email-pref-toggle-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const res = await apiSetEmailUnsubscribed(newUnsubscribedFlag);
+    if (!res.success) { toast(res.message, 'w'); refreshEmailPrefCard(); return; }
+    toast(newUnsubscribedFlag ? 'ইমেইল বন্ধ করা হয়েছে।' : 'ইমেইল আবার চালু করা হয়েছে।', 's');
+    refreshEmailPrefCard();
+  } catch (err) {
+    showFatalError('ইমেইল প্রেফারেন্স বদলাতে সমস্যা:\n' + humanizeError(err), err);
+    refreshEmailPrefCard();
+  }
 }
 
 // ✅ ধাপ ২২: আগে হার্ডকোডেড "Firestore সংযুক্ত" (সবুজ, সবসময়) দেখাত —
