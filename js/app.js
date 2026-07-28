@@ -151,6 +151,7 @@ function renderShell() {
   if (APP_STATE.currentTab === 'admin' && !APP_STATE.isAdmin) APP_STATE.currentTab = 'dashboard';
   if (APP_STATE.currentTab === 'ads' && !APP_STATE.ads.enabled) APP_STATE.currentTab = 'dashboard';
   if (APP_STATE.currentTab === 'staff' && APP_STATE.isStaffMember) APP_STATE.currentTab = 'dashboard';
+  if (APP_STATE.currentTab === 'aiSettings' && APP_STATE.isStaffMember) APP_STATE.currentTab = 'dashboard';
   goTab(APP_STATE.currentTab);
   setText('sidebar-pharma-name', APP_STATE.pharmacyName);
 }
@@ -160,7 +161,8 @@ function renderSidebarNav() {
   const sections = NAV_CONFIG.filter(s =>
   (s.section !== 'প্রশাসন' || APP_STATE.isAdmin) &&
   (s.section !== 'B2B' || APP_STATE.ads.enabled) &&
-  (s.section !== 'টিম' || !APP_STATE.isStaffMember)   // ✅ নতুন — স্টাফ নিজে এই ট্যাব দেখবে না
+  (s.section !== 'টিম' || !APP_STATE.isStaffMember) &&   // ✅ স্টাফ নিজে এই ট্যাব দেখবে না
+  (s.section !== 'AI ফিচার' || !APP_STATE.isStaffMember) // ✅ নতুন — AI কনফিগারেশন শুধু owner-এর
 );
   nav.innerHTML = sections.map(section => `
     <div>
@@ -321,6 +323,13 @@ function renderTabPanels() {
         <div id="about-content"></div>
       </div>`;
     }
+    // ১৮. AI সেটিংস ট্যাব
+    if (item.id === 'aiSettings') {
+      return `<div id="tab-aiSettings" class="tab-panel hidden tab-enter">
+        <div class="mb-5"><h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid ${item.icon} text-brand"></i> ${esc(item.label)}</h2></div>
+        <div id="aiSettings-content"></div>
+      </div>`;
+    }
     // . বাকি সব ডিফল্ট/প্লেসহোল্ডার ট্যাব
     return `<div id="tab-${item.id}" class="tab-panel hidden tab-enter">
       <div class="mb-5">
@@ -403,6 +412,7 @@ function goTab(tabId, opts = {}) {
     if (tabId === 'contact') { renderContactModule(); }
     if (tabId === 'about') { renderAboutModule(); }
     if (tabId === 'staff') { renderStaffModule(); }
+    if (tabId === 'aiSettings') { renderAiSettingsModule(); }
   } catch (err) {
     showFatalError('goTab("' + tabId + '") এ সমস্যা:\n' + err.message);
   }
