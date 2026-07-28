@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v23'; 
+const CACHE_NAME = 'sohojtech-shell-v24'; 
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
@@ -20,7 +20,7 @@ const PRECACHE_URLS = [
   './js/modules/accounts.js', './js/modules/settings.js', './js/modules/admin.js',
   './js/modules/ads.js', './js/modules/staff.js',
   './js/db-indexeddb.js', './js/sync-engine.js',
-  './js/auth.js', './js/api-client.js', './js/modules/analytics.js', './js/app.js',
+  './js/auth.js', './js/api-client.js', './js/ai-service.js', './js/modules/analytics.js', './js/app.js',
   './js/modules/tour.js', './js/modules/changelog.js', 
   './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   './unsubscribe.html',
