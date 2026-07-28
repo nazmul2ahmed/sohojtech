@@ -28,13 +28,18 @@ function renderPurchaseModule() {
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <!-- ══ ক্রয় ফর্ম ══ -->
       <div class="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
             <i class="fa-solid fa-cart-flatbed text-brand"></i> নতুন ক্রয় এন্ট্রি
           </h5>
-          <button onclick="resetPurchase()" class="text-xs text-red-600 hover:underline flex items-center gap-1">
-            <i class="fa-solid fa-rotate-left"></i> রিসেট
-          </button>
+          <div class="flex items-center gap-3">
+            <button onclick="openPurInvoiceScanModal()" class="text-xs text-brand hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-camera"></i> AI দিয়ে স্ক্যান করুন
+            </button>
+            <button onclick="resetPurchase()" class="text-xs text-red-600 hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-rotate-left"></i> রিসেট
+            </button>
+          </div>
         </div>
 
         <div id="pur-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-3 py-2 mb-3"></div>
@@ -165,7 +170,12 @@ function renderPurItems() {
   if (!container) return;
 
   container.innerHTML = APP_STATE.purItems.map((item, i) => {
-    const displayVal = item.medId ? buildPurMedDisplayText(item) : '';
+    const displayVal = item.medId ? buildPurMedDisplayText(item) : (item.aiRawBrand || '');
+    const aiBadge = item.aiScanned
+      ? (item.aiMatched
+          ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 ml-1">✨ AI যাচাই করেছে</span>`
+          : `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 ml-1" title="AI পড়েছে: ${esc(item.aiRawBrand || '')}">⚠️ AI: মেলেনি, নির্বাচন করুন</span>`)
+      : '';
     return `
     <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-3 relative bg-slate-50 dark:bg-slate-900/30">
       <button onclick="removePurchaseItem(${i})" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">
@@ -173,7 +183,7 @@ function renderPurItems() {
       </button>
       <div class="grid grid-cols-12 gap-2">
         <div class="col-span-12 md:col-span-4">
-          <label class="block text-[11px] text-slate-400 mb-1">ওষুধ <span class="text-red-500">*</span></label>
+          <label class="block text-[11px] text-slate-400 mb-1 flex items-center flex-wrap">ওষুধ <span class="text-red-500">*</span>${aiBadge}</label>
           <input type="text" id="pur-med-input-${i}" list="pur-med-list-${i}" value="${esc(displayVal)}"
             placeholder="— ওষুধ সার্চ করুন —" autocomplete="off"
             onchange="onPurMedicineChange(${i})" onkeydown="onPurMedicineKeydown(event, ${i})"
@@ -521,4 +531,191 @@ async function deletePurchaseConfirm(purchaseId) {
     toast(res.message, 's');
     renderTodayPurchases();
   } catch (err) { showFatalError('ক্রয় মুছতে সমস্যা:\n' + humanizeError(err), err); }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ Step 4 — AI ইনভয়েস স্ক্যান — ছবি থেকে ক্রয়-এন্ট্রি pre-fill
+// (human-confirmation gate: শুধু APP_STATE.purItems[] pre-fill হয়,
+// submitPurchase() না চাপা পর্যন্ত কিছুই Firestore-এ যায় না)
+// ════════════════════════════════════════════════════════════
+const PUR_SCAN_MAX_DIM = 1600;
+const PUR_SCAN_JPEG_QUALITY = 0.72;
+const PUR_SCAN_MAX_BYTES = 900 * 1024; // ৯০০ KB — Apps Script payload-এ নিরাপদ মার্জিন
+
+function compressInvoiceImageFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('শুধু ছবি ফাইল (JPG/PNG) আপলোড করুন।'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        const scale = Math.min(1, PUR_SCAN_MAX_DIM / Math.max(w, h));
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', PUR_SCAN_JPEG_QUALITY));
+      };
+      img.onerror = () => reject(new Error('ছবি পড়া যায়নি — ফাইলটা corrupted হতে পারে।'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('ফাইল রিড করতে ব্যর্থ।'));
+    reader.readAsDataURL(file);
+  });
+}
+
+let _purScanImageBase64 = null;
+
+function openPurInvoiceScanModal() {
+  if (guardReadOnly()) return;
+  if (document.getElementById('pur-scan-modal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'pur-scan-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-camera text-brand mr-1"></i> ইনভয়েস স্ক্যান করুন (AI)</h4>
+      <p class="text-xs text-slate-400 mb-4">ক্রয়-ইনভয়েসের ছবি তুলুন বা আপলোড করুন — AI প্রতিটা লাইন-আইটেম পড়ে ফর্মে বসিয়ে দেবে। <b>কিছুই সরাসরি সংরক্ষণ হবে না</b> — আপনাকে যাচাই করে "ক্রয় নিশ্চিত করুন" চাপতেই হবে।</p>
+      <div id="pur-scan-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
+
+      <div id="pur-scan-preview-box" class="mb-3"></div>
+
+      <input type="file" id="pur-scan-file" accept="image/*" capture="environment" class="hidden" onchange="onPurScanFileSelect(event)"/>
+      <label for="pur-scan-file" class="btn btn-brand-outline btn-block cursor-pointer mb-3">
+        <i class="fa-solid fa-image mr-1"></i> ছবি বাছাই করুন
+      </label>
+
+      <div class="flex gap-2">
+        <button id="pur-scan-submit-btn" onclick="runPurInvoiceScan()" class="btn btn-primary flex-1" disabled>
+          <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> স্ক্যান করুন
+        </button>
+        <button onclick="closePurScanModal()" class="btn btn-secondary">বাতিল</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  openAppModal('pur-scan-modal', closePurScanModal);
+}
+
+function closePurScanModal() {
+  document.getElementById('pur-scan-modal')?.remove();
+  _purScanImageBase64 = null;
+}
+
+async function onPurScanFileSelect(event) {
+  const errEl = document.getElementById('pur-scan-error');
+  errEl.classList.add('hidden');
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const previewBox = document.getElementById('pur-scan-preview-box');
+  previewBox.innerHTML = `<div class="text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> ছবি প্রসেস হচ্ছে...</div>`;
+
+  try {
+    const dataUrl = await compressInvoiceImageFile(file);
+    if (dataUrl.length > PUR_SCAN_MAX_BYTES) {
+      throw new Error('কম্প্রেস করার পরও ছবির সাইজ বড় — আরও স্পষ্ট/কাছ থেকে তোলা ছোট একটা ছবি ব্যবহার করুন।');
+    }
+    _purScanImageBase64 = dataUrl;
+    previewBox.innerHTML = `<img src="${dataUrl}" class="w-full max-h-48 object-contain border border-slate-200 dark:border-slate-600 rounded-lg bg-white"/>`;
+    document.getElementById('pur-scan-submit-btn').disabled = false;
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+    previewBox.innerHTML = '';
+    _purScanImageBase64 = null;
+    document.getElementById('pur-scan-submit-btn').disabled = true;
+  } finally {
+    event.target.value = '';
+  }
+}
+
+async function runPurInvoiceScan() {
+  if (!_purScanImageBase64) return;
+  const errEl = document.getElementById('pur-scan-error');
+  errEl.classList.add('hidden');
+  const btn = document.getElementById('pur-scan-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> AI পড়ছে...';
+
+  try {
+    // data URL-এর prefix (data:image/jpeg;base64,) বাদ — AiProxy.gs raw base64 আশা করে
+    const base64Only = _purScanImageBase64.split(',')[1];
+    const res = await callAiTask('purchaseInvoiceReader', { imageBase64: base64Only });
+    const items = (res.data && res.data.items) || [];
+    if (!items.length) {
+      throw new Error('কোনো লাইন-আইটেম শনাক্ত করা যায়নি — ছবিটা স্পষ্ট কিনা যাচাই করে আবার চেষ্টা করুন, অথবা ম্যানুয়ালি এন্ট্রি করুন।');
+    }
+    applyAiScannedItemsToPurchaseForm(items);
+    toast(`AI ${items.length}টা লাইন-আইটেম পড়েছে — প্রতিটা যাচাই করে "ক্রয় নিশ্চিত করুন" চাপুন।`, 's');
+    closePurScanModal();
+  } catch (err) {
+    errEl.textContent = humanizeError(err);
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i> স্ক্যান করুন';
+  }
+}
+
+// ✅ AI-প্রাপ্ত brand নাম দিয়ে বিদ্যমান medicine-এ ম্যাচ — AI ডোজ-ফর্ম/শক্তি দেয়
+// না বলে resolveMedicineMatch() reuse না করে আলাদা সরল brand-only matcher।
+// exact-single বা partial-single হলেই auto-select; নাহলে (০ বা ১+ ম্যাচ) খালি
+// রেখে ইউজারকে ম্যানুয়ালি বাছতে দেওয়া হয় — silent-wrong-selection এড়াতে।
+function fuzzyMatchAiBrandToMedicine(aiBrand) {
+  const q = String(aiBrand || '').trim().toLowerCase();
+  if (!q) return null;
+  const exact = APP_STATE.medicines.filter(m => m.brand.trim().toLowerCase() === q);
+  if (exact.length === 1) return exact[0];
+  const partial = APP_STATE.medicines.filter(m =>
+    m.brand.toLowerCase().includes(q) || q.includes(m.brand.toLowerCase())
+  );
+  if (partial.length === 1) return partial[0];
+  return null;
+}
+
+// MM/YYYY প্রত্যাশিত, কিন্তু M/YYYY বা MM-YYYY এর মতো সামান্য বিচ্যুতিও হ্যান্ডল করে
+function normalizeAiExpiry(val) {
+  if (!val) return '';
+  const m = String(val).match(/(\d{1,2})[\/\-](\d{4})/);
+  if (!m) return '';
+  return String(m[1]).padStart(2, '0') + '/' + m[2];
+}
+
+function applyAiScannedItemsToPurchaseForm(aiItems) {
+  closeMedDisambiguation();
+  const newRows = aiItems.map(ai => {
+    const matched = fuzzyMatchAiBrandToMedicine(ai.brand);
+    const qty = Math.max(0, parseFloat(ai.qty) || 1);
+    const purchasePrice = Math.max(0, parseFloat(ai.purchasePrice) || 0);
+    const mrp = Math.max(0, parseFloat(ai.mrp) || 0);
+    const expiryDate = normalizeAiExpiry(ai.expiryDate);
+
+    if (matched) {
+      const inv = APP_STATE.inventory.find(x => x.medId === matched.id);
+      return {
+        medId: matched.id, brand: matched.brand, doseForm: matched.doseForm, strength: matched.strength,
+        qty, purchasePrice, mrp, sellPrice: inv?.sellPrice || 0, expiryDate,
+        aiScanned: true, aiMatched: true, aiRawBrand: ai.brand || '',
+      };
+    }
+    return {
+      medId: '', brand: '', doseForm: '', strength: '',
+      qty, purchasePrice, mrp, sellPrice: 0, expiryDate,
+      aiScanned: true, aiMatched: false, aiRawBrand: ai.brand || '(নাম পড়া যায়নি)',
+    };
+  });
+
+  // ফর্মের draft খালি (একটাই ফাঁকা রো) থাকলে replace, নাহলে বিদ্যমান রো-এর
+  // সাথে যোগ — ইউজার আগে থেকে কিছু আইটেম টাইপ করে রাখলে হারাবে না
+  const isDraftEmpty = APP_STATE.purItems.length === 1 && !APP_STATE.purItems[0].medId && !APP_STATE.purItems[0].aiScanned;
+  APP_STATE.purItems = isDraftEmpty ? newRows : APP_STATE.purItems.concat(newRows);
+  renderPurItems();
+  calcPurTotal();
 }
