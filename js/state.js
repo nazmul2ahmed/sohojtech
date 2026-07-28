@@ -16,7 +16,6 @@ const APP_STATE = {
   staffRole: null,        // 'manager' | 'cashier' | null
   isStaffMember: false,
 
-
   // Business data (এখনো খালি — পরের ধাপে Mock Data দিয়ে পূরণ হবে)
   pharmacyName: 'ফার্মেসি',
   ownerName: '',
@@ -85,7 +84,7 @@ const NAV_CONFIG = [
       { id: 'medicine',  label: 'ওষুধ মাস্টার', icon: 'fa-capsules' },
       { id: 'inventory', label: 'ইনভেন্টরি', icon: 'fa-boxes-stacked' },
       { id: 'purchase',  label: 'ক্রয়', icon: 'fa-truck-field' },
-      { id: 'returns', label: 'রিটার্ন', icon: 'fa-rotate-left' },
+      { id: 'returns',   label: 'রিটার্ন', icon: 'fa-rotate-left' },
       { id: 'opening',   label: 'পূর্বের হিসাব', icon: 'fa-clock-rotate-left' },
     ],
   },
@@ -102,19 +101,25 @@ const NAV_CONFIG = [
     section: 'সহায়তা',
     items: [
       { id: 'contact', label: 'যোগাযোগ ও সাবস্ক্রিপশন', icon: 'fa-headset' },
-      { id: 'about', label: 'আমাদের সম্পর্কে', icon: 'fa-circle-info' },
+      { id: 'about',   label: 'আমাদের সম্পর্কে', icon: 'fa-circle-info' },
     ],
   },
   {
-  section: 'টিম',
-  items: [
-    { id: 'staff', label: 'স্টাফ ম্যানেজমেন্ট', icon: 'fa-users-gear' },
-  ],
+    section: 'টিম',
+    items: [
+      { id: 'staff', label: 'স্টাফ ম্যানেজমেন্ট', icon: 'fa-users-gear' },
+    ],
   },
   {
     section: 'প্রশাসন',
     items: [
       { id: 'admin', label: 'ইউজার ম্যানেজমেন্ট', icon: 'fa-user-shield' },
+    ],
+  },
+  {
+    section: 'AI ফিচার',
+    items: [
+      { id: 'aiSettings', label: 'AI সেটিংস', icon: 'fa-robot' },
     ],
   },
   {
