@@ -1,5 +1,3 @@
-'use strict';
-
 const AI_PROXY_URL = 'https://script.google.com/macros/s/AKfycbyHoTy9pnCUX3FPn4iskPgu9Ub6lbm6VHPeDg7zKWHmZcAjutjORYRtMUYHCRBsFvzSdA/exec';
 
 async function callAiTask(task, payload) {
@@ -11,14 +9,11 @@ async function callAiTask(task, payload) {
 
   const resp = await fetch(AI_PROXY_URL, {
     method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },  // ✅ preflight এড়াতে
     body: JSON.stringify({ idToken, ownerUid, task, payload }),
   });
 
   const result = await resp.json();
   if (!result.success) throw new Error(result.message || 'AI সার্ভিস ব্যর্থ হয়েছে।');
-  return result; // { success, provider, data }
+  return result;
 }
-
-// ব্যবহার উদাহরণ (Step 3-4-এ পুরোপুরি ইন্টিগ্রেট হবে):
-// const res = await callAiTask('purchaseInvoiceReader', { imageBase64 });
-// console.log(res.data.items); // [{brand, qty, purchasePrice, mrp, expiryDate}, ...]
