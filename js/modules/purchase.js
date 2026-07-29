@@ -12,6 +12,9 @@ function genPurchaseId() {
 //    সফল হলেই APP_STATE-এ optimistic আপডেট হয়।
 // ✅ Tab-switch persistence: সরবরাহকারী, তারিখ, পেমেন্ট টাইপ ও আইটেম এখন
 //    APP_STATE-এ ধরে রাখা হয়, tab পাল্টালে হারায় না।
+// ✅ AI ইনভয়েস-স্ক্যান (Step 4 + money-critical reconciliation): AI কখনো
+//    টাকার arithmetic করে না — শুধু raw unit_tp/unit_vat/qty/line_total_printed
+//    ট্রান্সক্রাইব করে, সব যোগ/গুণ/ভাগ এখানে JS-এ deterministic ভাবে হয়।
 // ════════════════════════════════════════════════════════════
 
 function renderPurchaseModule() {
@@ -190,7 +193,7 @@ function renderPurItems() {
       : '';
     // ✅ pack-size ইনলাইন-এডিট — শুধু AI-স্ক্যান করা রো-তে দেখাবে
     const packSizeRow = item.aiScanned ? `
-      <div class="col-span-12 flex items-center gap-2 mt-1 text-[11px] text-slate-400">
+      <div class="col-span-12 flex items-center gap-2 mt-1 text-[11px] text-slate-400 flex-wrap">
         <i class="fa-solid fa-wand-magic-sparkles text-brand"></i>
         AI অনুমান: ইনভয়েসে ${item.aiInvoicedQty} প্যাক, প্রতি প্যাকে
         <input type="number" id="pur-ai-packsize-${i}" value="${item.aiBaseUnitsPerPack}" min="1"
@@ -491,6 +494,7 @@ function resetPurchase() {
   closeMedDisambiguation();
   APP_STATE.purDate = null; APP_STATE.purSupplierId = null; APP_STATE.purPayType = 'নগদ';
   APP_STATE.purItems = [];
+  APP_STATE.purAiInvoiceTotal = null; // ✅ রিসেটে AI-reconciliation স্টেটও পরিষ্কার
   sdClear('sd-pur-supplier');
   addPurchaseItem();
   updatePurPayTypeUI();
@@ -692,7 +696,6 @@ async function runPurInvoiceScan() {
 // না বলে resolveMedicineMatch() reuse না করে আলাদা সরল brand-only matcher।
 // exact-single বা partial-single হলেই auto-select; নাহলে (০ বা ১+ ম্যাচ) খালি
 // রেখে ইউজারকে ম্যানুয়ালি বাছতে দেওয়া হয় — silent-wrong-selection এড়াতে।
-// ✅ AI-প্রাপ্ত brand নাম দিয়ে বিদ্যমান medicine-এ ম্যাচ — আগের মতোই simple matcher
 function fuzzyMatchAiBrandToMedicine(aiBrand) {
   const q = String(aiBrand || '').trim().toLowerCase();
   if (!q) return null;
@@ -733,6 +736,9 @@ function checkDoseFormMismatch(unitType, doseForm) {
 // এই arithmetic করে না। lineTotalComputed = invoiced_qty × total_net_pack_price,
 // যেটা base_units_per_pack থেকে independent (গাণিতিকভাবে বাতিল হয়ে যায়) —
 // তাই pack-size অনুমান ভুল হলেও টাকার রিকনসিলিয়েশন প্রভাবিত হয় না।
+// per_unit_cost এখন সরাসরি lineTotalComputed ÷ qty (মোট-পিস) থেকে — dimensionally
+// সরাসরি "লাইনের মোট টাকা ÷ মোট পিস", totalNetPackPrice÷baseUnitsPerPack-এর
+// সাথে গাণিতিকভাবে অভিন্ন কিন্তু pack-size-independence টা কোডেও স্পষ্ট দেখায়।
 const AI_LINE_TOLERANCE = 0.05; // ৳ — শুধু রাউন্ডিং-জনিত সামান্য পার্থক্য মেনে নেওয়ার জন্য
 
 function computeAiLineData(ai) {
@@ -740,11 +746,11 @@ function computeAiLineData(ai) {
   const baseUnitsPerPack = Math.max(1, parseFloat(ai.base_units_per_pack) || 1);
   const unitTp = ai.unit_tp !== null && ai.unit_tp !== undefined ? parseFloat(ai.unit_tp) || 0 : 0;
   const unitVat = ai.unit_vat !== null && ai.unit_vat !== undefined ? parseFloat(ai.unit_vat) || 0 : 0;
-  const totalNetPackPrice = round2(unitTp + unitVat); // ✅ সিদ্ধান্ত ২ — VAT merged, আলাদা ফিল্ড রাখা হচ্ছে না
+  const totalNetPackPrice = round2(unitTp + unitVat); // ✅ VAT merged — final unit-cost-এ মিশিয়ে ফেলা, আলাদা ফিল্ড না
 
-  const qty = Math.round(invoicedQty * baseUnitsPerPack);
-  const purchasePrice = baseUnitsPerPack > 0 ? round2(totalNetPackPrice / baseUnitsPerPack) : 0;
-  const lineTotalComputed = round2(invoicedQty * totalNetPackPrice); // = qty × purchasePrice, pack-size-independent
+  const qty = Math.round(invoicedQty * baseUnitsPerPack); // total_base_qty
+  const lineTotalComputed = round2(invoicedQty * totalNetPackPrice); // পুরো লাইনের মোট টাকা — pack-size থেকে independent
+  const purchasePrice = qty > 0 ? round2(lineTotalComputed / qty) : 0; // লাইন-টোটাল ÷ মোট-পিস
 
   const printed = ai.line_total_printed !== null && ai.line_total_printed !== undefined
     ? parseFloat(ai.line_total_printed) : null;
@@ -810,7 +816,7 @@ function onPurAiPackSizeChange(i) {
   const newPackSize = Math.max(1, parseFloat(document.getElementById(`pur-ai-packsize-${i}`).value) || 1);
   item.aiBaseUnitsPerPack = newPackSize;
   item.qty = Math.round(item.aiInvoicedQty * newPackSize);
-  item.purchasePrice = round2(item.aiTotalNetPackPrice / newPackSize);
+  item.purchasePrice = item.qty > 0 ? round2((item.aiInvoicedQty * item.aiTotalNetPackPrice) / item.qty) : 0;
   document.getElementById(`pur-qty-${i}`).value = item.qty;
   document.getElementById(`pur-price-${i}`).value = item.purchasePrice;
   updatePurLineTotal(i);
