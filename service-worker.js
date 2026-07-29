@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v27'; 
+const CACHE_NAME = 'sohojtech-shell-v28'; 
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
