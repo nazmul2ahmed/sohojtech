@@ -63,6 +63,7 @@ function renderPurchaseModule() {
           </div>
         </div>
 
+        <div id="pur-ai-reconcile-box"></div>
         <div id="pur-items-list" class="space-y-2 mb-3"></div>
 
         <button onclick="addPurchaseItem()" class="btn btn-brand-outline btn-sm mb-4">
@@ -176,6 +177,27 @@ function renderPurItems() {
           ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 ml-1">✨ AI যাচাই করেছে</span>`
           : `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 ml-1" title="AI পড়েছে: ${esc(item.aiRawBrand || '')}">⚠️ AI: মেলেনি, নির্বাচন করুন</span>`)
       : '';
+    // ✅ দাম-যাচাই ব্যাজ — verified (ছাপা লাইন-টোটালের সাথে মিলেছে) /
+    // mismatch (আছে কিন্তু মেলেনি, সাবধান) / unverifiable (কোনো লাইন-টোটাল ছাপা নেই)
+    const priceBadge = item.aiScanned ? (() => {
+      if (item.aiPriceStatus === 'verified') return `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 ml-1" title="ইনভয়েসের লাইন-টোটালের সাথে মিলেছে">💰 দাম যাচাই হয়েছে</span>`;
+      if (item.aiPriceStatus === 'mismatch') return `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 ml-1" title="ইনভয়েসে ছাপা: ৳${fmt(item.aiLineTotalPrinted || 0)}, হিসাবকৃত: ৳${fmt(round2(item.qty * item.purchasePrice))}">⚠️ দামে অমিল — চেক করুন</span>`;
+      return `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 ml-1">দাম স্বয়ং-যাচাই করুন</span>`;
+    })() : '';
+    // ✅ unit_type বনাম doseForm mismatch
+    const doseFormBadge = item.aiScanned && item.aiDoseFormMismatch
+      ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 ml-1" title="AI packaging দেখে '${esc(item.aiUnitType)}' মনে করেছে, কিন্তু ওষুধ মাস্টারে ডোজ-ফর্ম '${esc(item.doseForm)}' — মিলছে না, ভুল ওষুধ ম্যাচ হয়ে থাকতে পারে">🔀 ডোজ-ফর্ম অমিল</span>`
+      : '';
+    // ✅ pack-size ইনলাইন-এডিট — শুধু AI-স্ক্যান করা রো-তে দেখাবে
+    const packSizeRow = item.aiScanned ? `
+      <div class="col-span-12 flex items-center gap-2 mt-1 text-[11px] text-slate-400">
+        <i class="fa-solid fa-wand-magic-sparkles text-brand"></i>
+        AI অনুমান: ইনভয়েসে ${item.aiInvoicedQty} প্যাক, প্রতি প্যাকে
+        <input type="number" id="pur-ai-packsize-${i}" value="${item.aiBaseUnitsPerPack}" min="1"
+          onchange="onPurAiPackSizeChange(${i})"
+          class="w-16 px-1.5 py-0.5 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        পিস — ভুল মনে হলে বদলে দিন (টাকার হিসাব প্রভাবিত হবে না, শুধু স্টক-গণনা ঠিক হবে)
+      </div>` : '';
     return `
     <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-3 relative bg-slate-50 dark:bg-slate-900/30">
       <button onclick="removePurchaseItem(${i})" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">
@@ -183,7 +205,7 @@ function renderPurItems() {
       </button>
       <div class="grid grid-cols-12 gap-2">
         <div class="col-span-12 md:col-span-4">
-          <label class="block text-[11px] text-slate-400 mb-1 flex items-center flex-wrap">ওষুধ <span class="text-red-500">*</span>${aiBadge}</label>
+          <label class="block text-[11px] text-slate-400 mb-1 flex items-center flex-wrap">ওষুধ <span class="text-red-500">*</span>${aiBadge}${priceBadge}${doseFormBadge}</label>
           <input type="text" id="pur-med-input-${i}" list="pur-med-list-${i}" value="${esc(displayVal)}"
             placeholder="— ওষুধ সার্চ করুন —" autocomplete="off"
             onchange="onPurMedicineChange(${i})" onkeydown="onPurMedicineKeydown(event, ${i})"
@@ -221,6 +243,7 @@ function renderPurItems() {
           <label class="block text-[11px] text-slate-400 mb-1">লাইন টোটাল</label>
           <div id="pur-linetotal-${i}" class="px-2 py-1.5 text-sm font-mono font-bold text-brand truncate">৳০.০০</div>
         </div>
+        ${packSizeRow}
       </div>
     </div>`;
   }).join('');
@@ -363,6 +386,7 @@ document.addEventListener('keydown', (e) => {
 function calcPurTotal() {
   const total = APP_STATE.purItems.reduce((a, item) => a + (item.qty || 0) * (item.purchasePrice || 0), 0);
   document.getElementById('pur-total').value = round2(total).toFixed(2);
+  renderAiReconciliationBanner(round2(total));
 }
 
 // ────────────────────────────────────────────────────────────
@@ -652,7 +676,7 @@ async function runPurInvoiceScan() {
     if (!items.length) {
       throw new Error('কোনো লাইন-আইটেম শনাক্ত করা যায়নি — ছবিটা স্পষ্ট কিনা যাচাই করে আবার চেষ্টা করুন, অথবা ম্যানুয়ালি এন্ট্রি করুন।');
     }
-    applyAiScannedItemsToPurchaseForm(items);
+    applyAiScannedItemsToPurchaseForm(items, res.data && res.data.invoice_total);
     toast(`AI ${items.length}টা লাইন-আইটেম পড়েছে — প্রতিটা যাচাই করে "ক্রয় নিশ্চিত করুন" চাপুন।`, 's');
     closePurScanModal();
   } catch (err) {
