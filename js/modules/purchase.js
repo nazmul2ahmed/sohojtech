@@ -668,6 +668,7 @@ async function runPurInvoiceScan() {
 // না বলে resolveMedicineMatch() reuse না করে আলাদা সরল brand-only matcher।
 // exact-single বা partial-single হলেই auto-select; নাহলে (০ বা ১+ ম্যাচ) খালি
 // রেখে ইউজারকে ম্যানুয়ালি বাছতে দেওয়া হয় — silent-wrong-selection এড়াতে।
+// ✅ AI-প্রাপ্ত brand নাম দিয়ে বিদ্যমান medicine-এ ম্যাচ — আগের মতোই simple matcher
 function fuzzyMatchAiBrandToMedicine(aiBrand) {
   const q = String(aiBrand || '').trim().toLowerCase();
   if (!q) return null;
@@ -688,34 +689,128 @@ function normalizeAiExpiry(val) {
   return String(m[1]).padStart(2, '0') + '/' + m[2];
 }
 
-function applyAiScannedItemsToPurchaseForm(aiItems) {
+// ✅ unit_type (AI-detected packaging category) বনাম medicine master-এর doseForm —
+// mismatch হলে silent-trust না করে flag করা হয় (patient-safety/data-integrity philosophy-এর
+// সম্প্রসারণ, ঠিক resolveMedicineMatch()-এর disambiguation-এর মতোই)। "pot" ইচ্ছাকৃতভাবে
+// বাদ — এটা আলগা ট্যাবলেট/পাউডার দুটোই হতে পারে, doseForm-এর সাথে নির্দিষ্টভাবে মেলে না।
+const UNIT_TYPE_DOSEFORM_MAP = {
+  piece: ['ট্যাবলেট', 'ক্যাপসুল', 'সাপোজিটরি'],
+  bottle: ['সিরাপ', 'ড্রপস', 'ইনজেকশন', 'ইনহেলার'],
+  tube: ['ক্রিম/মলম'],
+};
+
+function checkDoseFormMismatch(unitType, doseForm) {
+  const allowed = UNIT_TYPE_DOSEFORM_MAP[unitType];
+  if (!allowed) return false; // "pot" বা অজানা unit_type — validation skip
+  return !allowed.includes(doseForm);
+}
+
+// ✅ money-critical অংশ — VAT-যোগ ও per-unit division সম্পূর্ণ JS-এ, AI কখনো
+// এই arithmetic করে না। lineTotalComputed = invoiced_qty × total_net_pack_price,
+// যেটা base_units_per_pack থেকে independent (গাণিতিকভাবে বাতিল হয়ে যায়) —
+// তাই pack-size অনুমান ভুল হলেও টাকার রিকনসিলিয়েশন প্রভাবিত হয় না।
+const AI_LINE_TOLERANCE = 0.05; // ৳ — শুধু রাউন্ডিং-জনিত সামান্য পার্থক্য মেনে নেওয়ার জন্য
+
+function computeAiLineData(ai) {
+  const invoicedQty = Math.max(0, parseFloat(ai.invoiced_qty) || 0);
+  const baseUnitsPerPack = Math.max(1, parseFloat(ai.base_units_per_pack) || 1);
+  const unitTp = ai.unit_tp !== null && ai.unit_tp !== undefined ? parseFloat(ai.unit_tp) || 0 : 0;
+  const unitVat = ai.unit_vat !== null && ai.unit_vat !== undefined ? parseFloat(ai.unit_vat) || 0 : 0;
+  const totalNetPackPrice = round2(unitTp + unitVat); // ✅ সিদ্ধান্ত ২ — VAT merged, আলাদা ফিল্ড রাখা হচ্ছে না
+
+  const qty = Math.round(invoicedQty * baseUnitsPerPack);
+  const purchasePrice = baseUnitsPerPack > 0 ? round2(totalNetPackPrice / baseUnitsPerPack) : 0;
+  const lineTotalComputed = round2(invoicedQty * totalNetPackPrice); // = qty × purchasePrice, pack-size-independent
+
+  const printed = ai.line_total_printed !== null && ai.line_total_printed !== undefined
+    ? parseFloat(ai.line_total_printed) : null;
+
+  let priceStatus; // 'verified' | 'mismatch' | 'unverifiable'
+  if (printed === null || isNaN(printed)) priceStatus = 'unverifiable';
+  else priceStatus = Math.abs(lineTotalComputed - printed) <= AI_LINE_TOLERANCE ? 'verified' : 'mismatch';
+
+  return {
+    qty, purchasePrice, invoicedQty, baseUnitsPerPack, totalNetPackPrice,
+    lineTotalComputed, lineTotalPrinted: printed, priceStatus,
+  };
+}
+
+function applyAiScannedItemsToPurchaseForm(aiItems, invoiceTotal) {
   closeMedDisambiguation();
   const newRows = aiItems.map(ai => {
     const matched = fuzzyMatchAiBrandToMedicine(ai.brand);
-    const qty = Math.max(0, parseFloat(ai.qty) || 1);
-    const purchasePrice = Math.max(0, parseFloat(ai.purchasePrice) || 0);
+    const lineData = computeAiLineData(ai);
     const mrp = Math.max(0, parseFloat(ai.mrp) || 0);
-    const expiryDate = normalizeAiExpiry(ai.expiryDate);
+    const expiryDate = normalizeAiExpiry(ai.expiry_date);
+    const unitType = ai.unit_type || '';
+    const doseFormMismatch = matched ? checkDoseFormMismatch(unitType, matched.doseForm) : false;
+
+    const common = {
+      qty: lineData.qty, purchasePrice: lineData.purchasePrice, mrp, expiryDate,
+      aiScanned: true,
+      aiInvoicedQty: lineData.invoicedQty, aiBaseUnitsPerPack: lineData.baseUnitsPerPack,
+      aiTotalNetPackPrice: lineData.totalNetPackPrice,
+      aiPriceStatus: lineData.priceStatus, aiLineTotalPrinted: lineData.lineTotalPrinted,
+      aiUnitType: unitType, aiDoseFormMismatch: doseFormMismatch, aiBatchNo: ai.batch_no || '',
+    };
 
     if (matched) {
       const inv = APP_STATE.inventory.find(x => x.medId === matched.id);
       return {
+        ...common,
         medId: matched.id, brand: matched.brand, doseForm: matched.doseForm, strength: matched.strength,
-        qty, purchasePrice, mrp, sellPrice: inv?.sellPrice || 0, expiryDate,
-        aiScanned: true, aiMatched: true, aiRawBrand: ai.brand || '',
+        sellPrice: inv?.sellPrice || 0,
+        aiMatched: true, aiRawBrand: ai.brand || '',
       };
     }
     return {
-      medId: '', brand: '', doseForm: '', strength: '',
-      qty, purchasePrice, mrp, sellPrice: 0, expiryDate,
-      aiScanned: true, aiMatched: false, aiRawBrand: ai.brand || '(নাম পড়া যায়নি)',
+      ...common,
+      medId: '', brand: '', doseForm: '', strength: '', sellPrice: 0,
+      aiMatched: false, aiRawBrand: ai.brand || '(নাম পড়া যায়নি)',
     };
   });
 
-  // ফর্মের draft খালি (একটাই ফাঁকা রো) থাকলে replace, নাহলে বিদ্যমান রো-এর
-  // সাথে যোগ — ইউজার আগে থেকে কিছু আইটেম টাইপ করে রাখলে হারাবে না
   const isDraftEmpty = APP_STATE.purItems.length === 1 && !APP_STATE.purItems[0].medId && !APP_STATE.purItems[0].aiScanned;
   APP_STATE.purItems = isDraftEmpty ? newRows : APP_STATE.purItems.concat(newRows);
+  APP_STATE.purAiInvoiceTotal = invoiceTotal !== null && invoiceTotal !== undefined ? parseFloat(invoiceTotal) : null;
   renderPurItems();
   calcPurTotal();
+}
+
+// ✅ ইউজার pack-size ঠিক করলে qty ও purchasePrice দুটোই আবার হিসাব হয় (totalNetPackPrice
+// অপরিবর্তিত থাকে) — কিন্তু qty×purchasePrice (লাইন-টোটাল) গাণিতিকভাবে একই থাকে,
+// তাই এই এডিট কখনো ইনভয়েস-রিকনসিলিয়েশন ভাঙে না, শুধু ইনভেন্টরি-গ্র্যানুলারিটি ঠিক করে।
+function onPurAiPackSizeChange(i) {
+  const item = APP_STATE.purItems[i];
+  if (!item || !item.aiScanned) return;
+  const newPackSize = Math.max(1, parseFloat(document.getElementById(`pur-ai-packsize-${i}`).value) || 1);
+  item.aiBaseUnitsPerPack = newPackSize;
+  item.qty = Math.round(item.aiInvoicedQty * newPackSize);
+  item.purchasePrice = round2(item.aiTotalNetPackPrice / newPackSize);
+  document.getElementById(`pur-qty-${i}`).value = item.qty;
+  document.getElementById(`pur-price-${i}`).value = item.purchasePrice;
+  updatePurLineTotal(i);
+  calcPurTotal();
+}
+
+// ✅ ইনভয়েসের ছাপা grand total বনাম ফর্মে-থাকা আইটেমগুলোর যোগফল — item-সংখ্যা
+// অনুযায়ী স্কেলিং-tolerance (প্রতি লাইনে সামান্য রাউন্ডিং জমতে পারে)
+function renderAiReconciliationBanner(formTotal) {
+  const box = document.getElementById('pur-ai-reconcile-box');
+  if (!box) return;
+  const expected = APP_STATE.purAiInvoiceTotal;
+  if (expected === null || expected === undefined || isNaN(expected)) { box.innerHTML = ''; return; }
+
+  const aiItemCount = APP_STATE.purItems.filter(i => i.aiScanned).length || 1;
+  const tolerance = Math.max(AI_LINE_TOLERANCE, AI_LINE_TOLERANCE * aiItemCount);
+  const diff = round2(formTotal - expected);
+  const matched = Math.abs(diff) <= tolerance;
+
+  box.innerHTML = matched
+    ? `<div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs rounded-lg px-3 py-2 mb-3">
+        <i class="fa-solid fa-circle-check mr-1"></i> AI-স্ক্যান করা মোট ইনভয়েসের ছাপা টোটাল (৳${fmt(expected)})-এর সাথে মিলছে।
+      </div>`
+    : `<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i> অমিল! ফর্মের মোট ৳${fmt(formTotal)}, কিন্তু ইনভয়েসে ছাপা মোট ৳${fmt(expected)} — পার্থক্য ৳${fmt(Math.abs(diff))}। সাবমিট করার আগে "⚠️" ব্যাজ-যুক্ত লাইনগুলো যাচাই করুন।
+      </div>`;
 }
