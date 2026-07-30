@@ -697,14 +697,33 @@ async function runPurInvoiceScan() {
 // exact-single বা partial-single হলেই auto-select; নাহলে (০ বা ১+ ম্যাচ) খালি
 // রেখে ইউজারকে ম্যানুয়ালি বাছতে দেওয়া হয় — silent-wrong-selection এড়াতে।
 function fuzzyMatchAiBrandToMedicine(aiBrand) {
-  const q = String(aiBrand || '').trim().toLowerCase();
+  const q = String(aiBrand || '').trim().toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ');
   if (!q) return null;
-  const exact = APP_STATE.medicines.filter(m => m.brand.trim().toLowerCase() === q);
+
+  const norm = (s) => String(s || '').toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const exact = APP_STATE.medicines.filter(m => norm(m.brand) === q);
   if (exact.length === 1) return exact[0];
-  const partial = APP_STATE.medicines.filter(m =>
-    m.brand.toLowerCase().includes(q) || q.includes(m.brand.toLowerCase())
+
+  let partial = APP_STATE.medicines.filter(m =>
+    norm(m.brand) && (q.includes(norm(m.brand)) || norm(m.brand).includes(q))
   );
   if (partial.length === 1) return partial[0];
+
+  // ✅ একই ব্র্যান্ডের একাধিক strength/variant থাকলে — AI-brand স্ট্রিং-এ থাকা
+  // সংখ্যাগুলো দিয়ে narrow-down (যেমন "Torax 30 Inj" থেকে "30" বের করে
+  // strength-এ "30" আছে এমন candidate-ই বাছাই করা)
+  if (partial.length > 1) {
+    const qNumbers = (q.match(/\d+/g) || []);
+    if (qNumbers.length) {
+      const byStrength = partial.filter(m => {
+        const sNumbers = String(m.strength || '').match(/\d+/g) || [];
+        return qNumbers.some(n => sNumbers.includes(n));
+      });
+      if (byStrength.length === 1) return byStrength[0];
+    }
+  }
+
   return null;
 }
 
