@@ -566,9 +566,9 @@ async function deletePurchaseConfirm(purchaseId) {
 // (human-confirmation gate: শুধু APP_STATE.purItems[] pre-fill হয়,
 // submitPurchase() না চাপা পর্যন্ত কিছুই Firestore-এ যায় না)
 // ════════════════════════════════════════════════════════════
-const PUR_SCAN_MAX_DIM = 1600;
-const PUR_SCAN_JPEG_QUALITY = 0.72;
-const PUR_SCAN_MAX_BYTES = 900 * 1024; // ৯০০ KB — Apps Script payload-এ নিরাপদ মার্জিন
+const PUR_SCAN_MAX_DIM = 2400;
+const PUR_SCAN_JPEG_QUALITY = 0.85;
+const PUR_SCAN_MAX_BYTES = 1800 * 1024; // ✅ টেস্ট: ১৮০০ KB — ছোট সংখ্যা/টেক্সট স্পষ্ট রাখতে রেজোলিউশন/কোয়ালিটি বাড়ানো হয়েছে
 
 function compressInvoiceImageFile(file) {
   return new Promise((resolve, reject) => {
