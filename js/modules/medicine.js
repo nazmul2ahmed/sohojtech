@@ -11,7 +11,7 @@
 let medSearchDebounce = null;
 
 function isEnglishBrand(str) {
-  return /^[A-Za-z0-9\s\-\+\.\/()]+$/.test(String(str || '').trim());
+  return /^[A-Za-z0-9\s\-\+\.\/()'&,]+$/.test(String(str || '').trim());
 }
 
 function findDuplicateMedicine(brand, doseForm, strength, excludeId) {
@@ -209,7 +209,7 @@ async function saveMedicine(medId) {
   const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('hidden'); };
   errEl.classList.add('hidden');
 
-  const brand = document.getElementById('mf-brand').value.trim();
+  const brand = normalizeBrandText(document.getElementById('mf-brand').value);
   const generic = document.getElementById('mf-generic').value.trim();
   const doseForm = document.getElementById('mf-doseform').value;
   const strength = document.getElementById('mf-strength').value.trim();
