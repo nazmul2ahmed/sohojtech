@@ -164,3 +164,42 @@ function humanizeError(err) {
 
   return 'একটা অপ্রত্যাশিত সমস্যা হয়েছে। সমস্যা থেকে গেলে অ্যাপ রিফ্রেশ করুন বা যোগাযোগ করুন।';
 }
+
+// ✅ নতুন — গ্রস (সামগ্রিক) ছাড় eligible আইটেমে অনুপাতে বণ্টন। ইনলাইন-ছাড়
+// থাকা আইটেম (getInlineDiscount(item) > 0) বাদ যায়। rounding-drift এড়াতে
+// শেষ eligible আইটেমে remainder বসানো হয়, যাতে যোগফল ঠিক grossDiscountAmt-এর
+// সমান হয় — accounting-এর জন্য এটা গুরুত্বপূর্ণ (penny mismatch চলবে না)।
+function distributeGrossDiscount(items, grossDiscountAmt, getGross, getInlineDiscount) {
+  const map = new Map();
+  const eligible = items.filter(it => !(getInlineDiscount(it) > 0));
+  const eligibleGrossTotal = round2(eligible.reduce((a, it) => a + getGross(it), 0));
+  if (eligibleGrossTotal <= 0 || grossDiscountAmt <= 0) {
+    eligible.forEach(it => map.set(it, 0));
+    return map;
+  }
+  let allocated = 0;
+  eligible.forEach((it, idx) => {
+    let share;
+    if (idx === eligible.length - 1) {
+      share = round2(grossDiscountAmt - allocated);
+    } else {
+      share = round2((getGross(it) / eligibleGrossTotal) * grossDiscountAmt);
+    }
+    allocated = round2(allocated + share);
+    map.set(it, Math.max(0, share));
+  });
+  return map;
+}
+
+// ✅ নতুন — Brand-name normalization। OCR/AI প্রায়ই non-breaking space,
+// curly quote, en/em-dash বসিয়ে দেয় — দেখতে ইংরেজি কিন্তু isEnglishBrand()-এর
+// কড়া regex ব্যর্থ হয়। সেভের আগে এখানে normalize করা হয়।
+function normalizeBrandText(str) {
+  return String(str || '')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2012\u2013\u2014\u2212]/g, '-')
+    .replace(/[\u00A0\u2000-\u200B]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
