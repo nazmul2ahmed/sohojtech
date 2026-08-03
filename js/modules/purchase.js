@@ -575,13 +575,15 @@ async function submitPurchase() {
     const netLine = round2(gross - effectiveDiscount);
     const netUnitCost = i.qty > 0 ? round2(netLine / i.qty) : i.purchasePrice;
     totalCost += netLine;
+    // ✅ ফিক্স: _effectiveDiscountAmt স্ক্র্যাচ ফিল্ড স্ট্রিপ করে বাদ (Firestore-এ leak করছিল)
+    const { _effectiveDiscountAmt, ...rest } = i;
     return {
-      ...i,
-      grossUnitPrice: i.purchasePrice,   // ✅ রেকর্ড/রিসিটের জন্য — আসল (ছাড়ের আগের) দাম
+      ...rest,
+      grossUnitPrice: i.purchasePrice,
       discountAmt: effectiveDiscount,
       discountPct: gross > 0 ? round2((effectiveDiscount / gross) * 100) : 0,
-      discountSource: effectiveDiscount <= 0 ? 'none' : ((i.discountAmt || 0) > 0 ? 'inline' : 'gross'), // ✅ নতুন — অডিট-ট্রেইলে ছাড়ের উৎস
-      purchasePrice: netUnitCost,        // ✅ batch cost/COGS এখন থেকে নেট মূল্য ব্যবহার করবে
+      discountSource: effectiveDiscount <= 0 ? 'none' : ((i.discountAmt || 0) > 0 ? 'inline' : 'gross'),
+      purchasePrice: netUnitCost,
       reorderLevel: med?.reorderLevel || APP_STATE.lowStockLevel || 10,
     };
   });
