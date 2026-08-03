@@ -602,10 +602,13 @@ async function submitNoInvoiceReturn() {
     const unitRefund = round2((item.sellPrice || 0) * (1 - discPct / 100));
     const lineTotal = round2(unitRefund * item.qty);
     const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
-    const costPrice = inv?.batches?.[0]?.cost || 0; // ✅ আনুমানিক — আসল ব্যাচ অজানা
+    const costPrice = inv?.batches?.[0]?.cost || 0; // আনুমানিক — আসল ব্যাচ অজানা
     amount += lineTotal;
     cost += costPrice * item.qty;
-    items.push({ medId: item.medId, name: item.name, qty: item.qty, price: unitRefund, discountPct: discPct, costPrice, consumedBatches: null });
+    // ✅ ফিক্স: price এখন গ্রস (sellPrice), discountPct আলাদা — receipt.js-এর
+    // buildReturnReceiptConfig()-এর কনভেনশনের সাথে মিলিয়ে (gross × (1-disc%)),
+    // আগে price-তেই net বসিয়ে discountPct আবার apply হয়ে ডাবল-ছাড় হচ্ছিল
+    items.push({ medId: item.medId, name: item.name, qty: item.qty, price: item.sellPrice || 0, discountPct: discPct, costPrice, consumedBatches: null });
   }
   if (!items.length) return showRetError('কমপক্ষে একটি ওষুধের পরিমাণ দিন।');
   amount = round2(amount);
@@ -623,7 +626,6 @@ async function submitNoInvoiceReturn() {
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> প্রক্রিয়াকরণ হচ্ছে...';
 
   try {
-    // ✅ apiSubmitCustomerReturn() পুনর্ব্যবহার — custId null, dueReduction 0
     const res = await apiSubmitCustomerReturn(returnDoc, null, 0);
     if (!res.success) {
       showRetError(res.message);
