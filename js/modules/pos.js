@@ -500,13 +500,14 @@ async function submitPOSSale() {
   const custName = custId === 'WALK_IN' ? 'নগদ গ্রাহক' : (customer?.name || custId);
   const invoiceNo = genInvoiceNo();
 
-  // ✅ item.discountPct চূড়ান্ত (ইনলাইন+গ্রস মিলিয়ে একক %) — accounts.js/
-  // dashboard.js/analytics.js/receipt.js এই ফিল্ড থেকেই ছাড় গণনা করে, তাই
-  // ওদের কোথাও কোনো পরিবর্তন লাগেনি
+  // ✅ ফিক্স: _effectiveDiscountAmt (স্ক্র্যাচ ফিল্ড) স্ট্রিপ করে বাদ, এবং
+  // discountAmt এখন ব্লেন্ডেড (ইনলাইন+গ্রস) effective ভ্যালু দিয়ে overwrite —
+  // আগে discountAmt শুধু inline অংশ রয়ে যেত, discountPct-এর সাথে অসামঞ্জস্যপূর্ণ
   const finalItems = validItems.map(i => {
     const gross = round2((i.qty || 0) * (i.price || 0));
     const effective = Math.min(i._effectiveDiscountAmt || 0, gross);
-    return { ...i, discountPct: gross > 0 ? round2((effective / gross) * 100) : 0 };
+    const { _effectiveDiscountAmt, ...rest } = i;
+    return { ...rest, discountAmt: effective, discountPct: gross > 0 ? round2((effective / gross) * 100) : 0 };
   });
 
   const sale = {
