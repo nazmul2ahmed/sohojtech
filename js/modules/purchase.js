@@ -15,10 +15,16 @@ function genPurchaseId() {
 // ✅ AI ইনভয়েস-স্ক্যান (Step 4 + money-critical reconciliation): AI কখনো
 //    টাকার arithmetic করে না — শুধু raw unit_tp/unit_vat/qty/line_total_printed
 //    ট্রান্সক্রাইব করে, সব যোগ/গুণ/ভাগ এখানে JS-এ deterministic ভাবে হয়।
+// ✅ গ্রস-ছাড় (সামগ্রিক): প্রতি-লাইন ইনলাইন ছাড় নেই এমন আইটেমগুলোর মধ্যে
+//    গ্রস-মূল্য অনুপাতে বণ্টিত হয় (distributeGrossDiscount)। calcPurTotal()
+//    ও submitPurchase() — দুই জায়গাতেই একই বণ্টন-লজিক ব্যবহার হয়, যাতে UI-তে
+//    দেখানো টোটাল আর Firestore-এ সেভ হওয়া totalCost সবসময় মিলে যায়।
 // ════════════════════════════════════════════════════════════
 
 function renderPurchaseModule() {
   const container = document.getElementById('purchase-content');
+  APP_STATE.purGrossDiscPct = APP_STATE.purGrossDiscPct || 0;
+  APP_STATE.purGrossDiscAmt = APP_STATE.purGrossDiscAmt || 0;
   if (!container) return;
 
   const offlineBanner = !navigator.onLine
@@ -73,6 +79,26 @@ function renderPurchaseModule() {
           <i class="fa-solid fa-plus"></i> ওষুধ যোগ করুন
         </button>
 
+        <div class="bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-600 rounded-lg p-3 mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300"><i class="fa-solid fa-tags text-brand mr-1"></i> সামগ্রিক (গ্রস) ছাড়</label>
+            <span id="pur-grossdisc-note" class="text-[10px] text-slate-400"></span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-2">শুধু যেসব আইটেমে ইনলাইন (প্রতি-লাইন) ছাড় নেই, সেগুলোতেই এই ছাড় প্রযোজ্য — অনুপাতে বণ্টিত।</p>
+          <div class="flex gap-2">
+            <div class="flex-1">
+              <label class="block text-[10px] text-slate-400 mb-1">ছাড় %</label>
+              <input type="number" id="pur-grossdisc-pct" value="0" min="0" max="100" step="0.01" oninput="onPurGrossDiscPctChange()"
+                class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+            </div>
+            <div class="flex-1">
+              <label class="block text-[10px] text-slate-400 mb-1">ছাড় (৳)</label>
+              <input type="number" id="pur-grossdisc-amt" value="0" min="0" step="0.01" oninput="onPurGrossDiscAmtChange()"
+                class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+            </div>
+          </div>
+        </div>
+
         <div class="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">মোট ক্রয়মূল্য (৳)</label>
@@ -113,6 +139,48 @@ function renderPurchaseModule() {
   setTimeout(() => focusPurMedicineInput(0), 50);
 }
 
+// ────────────────────────────────────────────────────────────
+// ✅ নতুন — গ্রস-ছাড় বণ্টন হেল্পার
+// ইনলাইন (প্রতি-লাইন) ছাড় যে আইটেমগুলোতে নেই, শুধু সেগুলোর মধ্যে
+// grossDiscountAmt-কে তাদের নিজ নিজ গ্রস-মূল্যের অনুপাতে বণ্টন করে।
+// শেষ eligible আইটেমে বাকি (remainder) বসানো হয়, যাতে round2()-জনিত
+// পয়সা-লেভেল ড্রিফটেও sum(allocated) === grossDiscountAmt সবসময় ঠিক থাকে।
+// ────────────────────────────────────────────────────────────
+function distributeGrossDiscount(items, grossDiscountAmt, grossFn, inlineDiscFn) {
+  const map = new Map();
+  if (!grossDiscountAmt || grossDiscountAmt <= 0) return map;
+
+  const eligible = items.filter(it => !(inlineDiscFn(it) > 0));
+  const eligibleTotal = round2(eligible.reduce((a, it) => a + (grossFn(it) || 0), 0));
+  if (eligibleTotal <= 0) return map;
+
+  let allocated = 0;
+  eligible.forEach((it, idx) => {
+    const g = grossFn(it) || 0;
+    let share;
+    if (idx === eligible.length - 1) {
+      share = round2(grossDiscountAmt - allocated); // শেষ আইটেম বাকিটা শুষে নেয় — রাউন্ডিং ড্রিফট এড়াতে
+    } else {
+      share = round2(grossDiscountAmt * (g / eligibleTotal));
+    }
+    allocated = round2(allocated + share);
+    map.set(it, share);
+  });
+  return map;
+}
+
+function onPurGrossDiscPctChange() {
+  const pct = clamp(parseFloat(document.getElementById('pur-grossdisc-pct').value) || 0, 0, 100);
+  APP_STATE.purGrossDiscPct = pct;
+  calcPurTotal();
+}
+function onPurGrossDiscAmtChange() {
+  const eligibleGross = round2(APP_STATE.purItems.filter(it => !(it.discountAmt > 0))
+    .reduce((a, it) => a + (it.qty || 0) * (it.purchasePrice || 0), 0));
+  const amt = clamp(parseFloat(document.getElementById('pur-grossdisc-amt').value) || 0, 0, eligibleGross);
+  APP_STATE.purGrossDiscPct = eligibleGross > 0 ? round2((amt / eligibleGross) * 100) : 0;
+  calcPurTotal();
+}
 // ────────────────────────────────────────────────────────────
 // SUPPLIER DROPDOWN
 // ────────────────────────────────────────────────────────────
@@ -399,13 +467,43 @@ function onPurDiscountBlur(i) {
   if (amtEl) amtEl.value = item.discountAmt || 0;
 }
 
-// ✅ পরিবর্তন — এখন গ্রস না, নেট (ছাড়-পরবর্তী) যোগফল দেখায়
+// ────────────────────────────────────────────────────────────
+// ✅ TOTAL — একমাত্র সংজ্ঞা (আগে দুইবার ডুপ্লিকেট ছিল, দ্বিতীয়টা
+// প্রথমটাকে override করে ছাড়/গ্রস-ছাড় দুটোই বাদ দিয়ে ফেলত — ফিক্সড)
+// ইনলাইন ছাড় নেই এমন আইটেমগুলোর মধ্যে গ্রস-ছাড় বণ্টিত হয়ে
+// প্রতিটির item._effectiveDiscountAmt-এ বসে, যেটা updatePurLineTotal()
+// এবং submitPurchase() দুই জায়গাতেই ব্যবহৃত হয়।
+// ────────────────────────────────────────────────────────────
 function calcPurTotal() {
-  const total = APP_STATE.purItems.reduce((a, item) => {
+  const eligibleGross = round2(APP_STATE.purItems.filter(it => !(it.discountAmt > 0))
+    .reduce((a, it) => a + (it.qty || 0) * (it.purchasePrice || 0), 0));
+  APP_STATE.purGrossDiscPct = APP_STATE.purGrossDiscPct || 0;
+  APP_STATE.purGrossDiscAmt = round2(eligibleGross * APP_STATE.purGrossDiscPct / 100);
+
+  const grossMap = distributeGrossDiscount(
+    APP_STATE.purItems, APP_STATE.purGrossDiscAmt,
+    it => (it.qty || 0) * (it.purchasePrice || 0), it => it.discountAmt || 0
+  );
+
+  let total = 0;
+  APP_STATE.purItems.forEach(item => {
     const gross = (item.qty || 0) * (item.purchasePrice || 0);
-    return a + (gross - (item.discountAmt || 0));
-  }, 0);
+    const inline = item.discountAmt || 0;
+    const effective = inline > 0 ? inline : (grossMap.get(item) || 0);
+    item._effectiveDiscountAmt = effective;
+    total += (gross - effective);
+  });
+
   document.getElementById('pur-total').value = round2(total).toFixed(2);
+
+  const gdAmtEl = document.getElementById('pur-grossdisc-amt');
+  const gdPctEl = document.getElementById('pur-grossdisc-pct');
+  if (gdAmtEl && document.activeElement !== gdAmtEl) gdAmtEl.value = APP_STATE.purGrossDiscAmt;
+  if (gdPctEl && document.activeElement !== gdPctEl) gdPctEl.value = APP_STATE.purGrossDiscPct;
+  const gdNoteEl = document.getElementById('pur-grossdisc-note');
+  if (gdNoteEl) gdNoteEl.textContent = eligibleGross > 0 ? `প্রযোজ্য আইটেম-গ্রস: ৳${fmt(eligibleGross)}` : 'কোনো যোগ্য আইটেম নেই';
+
+  APP_STATE.purItems.forEach((_, i) => updatePurLineTotal(i));
   renderAiReconciliationBanner(round2(total));
 }
 
@@ -423,13 +521,15 @@ function onPurFieldBlur(i) {
   if (sellEl) sellEl.value = item.sellPrice;
 }
 
+// ✅ পরিবর্তন — এখন ইনলাইন বা গ্রস-বণ্টিত (effective) ছাড় যেটা প্রযোজ্য সেটা দেখায়
 function updatePurLineTotal(i) {
   const item = APP_STATE.purItems[i];
   const gross = round2((item.qty || 0) * (item.purchasePrice || 0));
-  const net = round2(gross - (item.discountAmt || 0));
+  const effective = item.discountAmt > 0 ? item.discountAmt : (item._effectiveDiscountAmt || 0);
+  const net = round2(gross - effective);
   const el = document.getElementById(`pur-linetotal-${i}`);
   if (!el) return;
-  el.innerHTML = (item.discountAmt > 0)
+  el.innerHTML = effective > 0
     ? `<span class="line-through text-slate-400 text-[10px] block">৳${fmt(gross)}</span>৳${fmt(net)}`
     : '৳' + fmt(net);
 }
@@ -475,15 +575,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ────────────────────────────────────────────────────────────
-// TOTAL
-// ────────────────────────────────────────────────────────────
-function calcPurTotal() {
-  const total = APP_STATE.purItems.reduce((a, item) => a + (item.qty || 0) * (item.purchasePrice || 0), 0);
-  document.getElementById('pur-total').value = round2(total).toFixed(2);
-  renderAiReconciliationBanner(round2(total));
-}
-
-// ────────────────────────────────────────────────────────────
 // ✅ SUBMIT — এখন async, apiSubmitPurchase() সফল হলেই APP_STATE আপডেট হয়
 // ────────────────────────────────────────────────────────────
 async function submitPurchase() {
@@ -497,25 +588,28 @@ async function submitPurchase() {
   if (!supId) return showPurError('সরবরাহকারী নির্বাচন করুন।');
   if (!validItems.length) return showPurError('কমপক্ষে একটি ওষুধ যোগ করুন।');
 
+  calcPurTotal(); // ✅ item._effectiveDiscountAmt (ইনলাইন + গ্রস-বণ্টিত) ফ্রেশ নিশ্চিত
+
   const supplier = APP_STATE.suppliers.find(s => s.id === supId);
   const purchaseId = genPurchaseId();
 
-  // ✅ নতুন — গ্রস থেকে টোটাল (ছাড় বাদ দিয়ে) হিসাব, এবং প্রতিটা আইটেমে
-  // purchasePrice-কে নেট-ইউনিট-কস্টে কনভার্ট (downstream batch cost/COGS-এর জন্য),
-  // গ্রস/ছাড় আলাদা ফিল্ডে রেকর্ড রাখা হচ্ছে অডিট-ট্রেইলের জন্য
+  // ✅ গ্রস থেকে টোটাল (ইনলাইন + গ্রস-বণ্টিত ছাড় বাদ দিয়ে) হিসাব, এবং প্রতিটা
+  // আইটেমে purchasePrice-কে নেট-ইউনিট-কস্টে কনভার্ট (downstream batch cost/COGS-এর
+  // জন্য), গ্রস/ছাড় আলাদা ফিল্ডে রেকর্ড রাখা হচ্ছে অডিট-ট্রেইলের জন্য
   let totalCost = 0;
   const itemsWithReorder = validItems.map(i => {
     const med = APP_STATE.medicines.find(m => m.id === i.medId);
     const gross = round2(i.qty * i.purchasePrice);
-    const discountAmt = Math.min(i.discountAmt || 0, gross);
-    const netLine = round2(gross - discountAmt);
+    const effectiveDiscount = Math.min(i._effectiveDiscountAmt || 0, gross);
+    const netLine = round2(gross - effectiveDiscount);
     const netUnitCost = i.qty > 0 ? round2(netLine / i.qty) : i.purchasePrice;
     totalCost += netLine;
     return {
       ...i,
       grossUnitPrice: i.purchasePrice,   // ✅ রেকর্ড/রিসিটের জন্য — আসল (ছাড়ের আগের) দাম
-      discountAmt,
-      discountPct: i.discountPct || 0,
+      discountAmt: effectiveDiscount,
+      discountPct: gross > 0 ? round2((effectiveDiscount / gross) * 100) : 0,
+      discountSource: effectiveDiscount <= 0 ? 'none' : ((i.discountAmt || 0) > 0 ? 'inline' : 'gross'), // ✅ নতুন — অডিট-ট্রেইলে ছাড়ের উৎস
       purchasePrice: netUnitCost,        // ✅ batch cost/COGS এখন থেকে নেট মূল্য ব্যবহার করবে
       reorderLevel: med?.reorderLevel || APP_STATE.lowStockLevel || 10,
     };
@@ -527,6 +621,7 @@ async function submitPurchase() {
     items: itemsWithReorder,
     totalCost, paymentType: payType,
     medicineName: validItems.map(i => i.brand).join(', '),
+    grossDiscountPct: APP_STATE.purGrossDiscPct || 0, // ✅ নতুন — রিসিটে/অডিটে সামগ্রিক ছাড়%
   };
 
   const btn = document.getElementById('pur-submit-btn');
@@ -604,6 +699,7 @@ function resetPurchase() {
   APP_STATE.purDate = null; APP_STATE.purSupplierId = null; APP_STATE.purPayType = 'নগদ';
   APP_STATE.purItems = [];
   APP_STATE.purAiInvoiceTotal = null; // ✅ রিসেটে AI-reconciliation স্টেটও পরিষ্কার
+  APP_STATE.purGrossDiscPct = 0; APP_STATE.purGrossDiscAmt = 0; // ✅ নতুন — গ্রস-ছাড় স্টেটও পরিষ্কার
   sdClear('sd-pur-supplier');
   addPurchaseItem();
   updatePurPayTypeUI();
@@ -992,14 +1088,18 @@ function renderAiReconciliationBanner(formTotal) {
 // টার্গেটেডভাবে সেট করা হয়, applyMedicineToPurItem()-এর মতো পুরো row
 // রিসেট করা হয় না)।
 // ════════════════════════════════════════════════════════════
+let _purQaGmSearchTimer = null;
+let _purQaGmSearchToken = 0;
+let _purQaGmLastResults = [];
+
 function openQuickAddMedicineFromPurchase(i) {
   if (guardReadOnly()) return;
   const item = APP_STATE.purItems[i];
   if (!item) return;
 
   const prefillBrand = item.aiRawBrand
-    ? stripPackSizeSuffix(item.aiRawBrand)
-    : (document.getElementById(`pur-med-input-${i}`)?.value || '');
+    ? stripPackSizeSuffix(normalizeBrandText(item.aiRawBrand))
+    : normalizeBrandText(document.getElementById(`pur-med-input-${i}`)?.value || '');
   const doseForms = ['ট্যাবলেট', 'ক্যাপসুল', 'সিরাপ', 'ইনজেকশন', 'ক্রিম/মলম', 'ড্রপস', 'ইনহেলার', 'সাপোজিটরি', 'অন্যান্য'];
   const unitTypeGuessMap = { piece: 'ট্যাবলেট', bottle: 'সিরাপ', tube: 'ক্রিম/মলম' };
   const guessedForm = unitTypeGuessMap[item.aiUnitType] || 'ট্যাবলেট';
@@ -1011,9 +1111,18 @@ function openQuickAddMedicineFromPurchase(i) {
   modal.innerHTML = `
     <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
       <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-plus text-brand mr-1"></i> নতুন ওষুধ (দ্রুত যোগ)</h4>
-      <p class="text-xs text-slate-400 mb-4">এখানে যোগ করলে সরাসরি এই ক্রয়-লাইনেই বসে যাবে — qty/দাম/মেয়াদ যা এখানে বসানো আছে তা অক্ষত থাকবে।</p>
+      <p class="text-xs text-slate-400 mb-4">এখানে যোগ করলে সরাসরি এই ক্রয়-লাইনেই বসে যাবে — qty/দাম/মেয়াদ/ছাড় যা এখানে বসানো আছে তা অক্ষত থাকবে।</p>
       <div id="pur-qa-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
-      <div class="space-y-3 mb-4">
+
+      <div class="mb-3">
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1"><i class="fa-solid fa-cloud-arrow-down text-brand mr-1"></i>গ্লোবাল মাস্টার থেকে খুঁজুন (ঐচ্ছিক)</label>
+        <input type="text" id="pur-qa-gm-search-input" placeholder="ব্র্যান্ড নাম টাইপ করুন..." oninput="onPurQaGlobalMedSearch(this.value)"
+          class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        <div id="pur-qa-gm-search-results" class="max-h-32 overflow-y-auto mt-1"></div>
+        <p class="text-[10px] text-slate-400 mt-1">নির্বাচন করলে জেনেরিক/ক্যাটাগরি/ম্যানুফ্যাকচারার নিচে অটো-ফিল হবে।</p>
+      </div>
+
+      <div class="space-y-3 mb-4 pt-3 border-t border-slate-100 dark:border-slate-700">
         <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Brand Name (English) *</label>
           <input type="text" id="pur-qa-brand" value="${esc(prefillBrand)}" placeholder="e.g. Maxpro"
@@ -1033,6 +1142,23 @@ function openQuickAddMedicineFromPurchase(i) {
           </div>
         </div>
         <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">জেনেরিক নাম</label>
+          <input type="text" id="pur-qa-generic" placeholder="ঐচ্ছিক — গ্লোবাল সার্চ থেকে অটো-ফিল হতে পারে"
+            class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">ক্যাটাগরি</label>
+            <input type="text" id="pur-qa-category" placeholder="ঐচ্ছিক"
+              class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">ম্যানুফ্যাকচারার</label>
+            <input type="text" id="pur-qa-manufacturer" placeholder="ঐচ্ছিক"
+              class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+          </div>
+        </div>
+        <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">রি-অর্ডার লেভেল</label>
           <input type="number" id="pur-qa-reorder" value="10" min="0"
             class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
@@ -1048,14 +1174,62 @@ function openQuickAddMedicineFromPurchase(i) {
   document.getElementById('pur-qa-brand').focus();
 }
 
+function onPurQaGlobalMedSearch(val) {
+  clearTimeout(_purQaGmSearchTimer);
+  const myToken = ++_purQaGmSearchToken;
+
+  _purQaGmSearchTimer = setTimeout(async () => {
+    const box = document.getElementById('pur-qa-gm-search-results');
+    if (!box) return;
+    if (val.trim().length < 2) { if (myToken === _purQaGmSearchToken) box.innerHTML = ''; return; }
+
+    if (myToken !== _purQaGmSearchToken) return;
+    box.innerHTML = '<div class="text-center text-xs text-slate-400 py-2"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+
+    const res = await apiSearchGlobalMedicines(val);
+    if (myToken !== _purQaGmSearchToken) return;
+
+    if (!res.success || !res.results.length) {
+      box.innerHTML = '<div class="text-center text-xs text-slate-400 py-2">পাওয়া যায়নি</div>';
+      return;
+    }
+
+    _purQaGmLastResults = res.results;
+    box.innerHTML = res.results.map((m, idx) => `
+      <div class="flex justify-between items-center py-1.5 px-2 border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/40 cursor-pointer" data-idx="${idx}">
+        <div class="min-w-0"><div class="text-xs font-semibold truncate">${esc(m.brand)}</div><div class="text-[10px] text-slate-400 truncate">${esc(m.generic || '')} • ${esc(m.manufacturer || '')}</div></div>
+        <i class="fa-solid fa-arrow-turn-down-left text-slate-300 text-xs flex-shrink-0"></i>
+      </div>`).join('');
+
+    box.querySelectorAll('[data-idx]').forEach(row => {
+      row.addEventListener('click', () => {
+        const m = _purQaGmLastResults[parseInt(row.dataset.idx, 10)];
+        if (!m) return;
+        const genEl = document.getElementById('pur-qa-generic');
+        const catEl = document.getElementById('pur-qa-category');
+        const mfrEl = document.getElementById('pur-qa-manufacturer');
+        if (genEl && !genEl.value) genEl.value = m.generic || '';
+        if (catEl && !catEl.value) catEl.value = m.category || '';
+        if (mfrEl && !mfrEl.value) mfrEl.value = m.manufacturer || '';
+        toast(`"${m.brand}" থেকে জেনেরিক/ক্যাটাগরি/ম্যানুফ্যাকচারার প্রি-ফিল হয়েছে।`, 's');
+        box.innerHTML = '';
+        document.getElementById('pur-qa-gm-search-input').value = '';
+      });
+    });
+  }, 350);
+}
+
 async function submitQuickAddMedicine(i) {
   const errEl = document.getElementById('pur-qa-error');
   const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('hidden'); };
   errEl.classList.add('hidden');
 
-  const brand = document.getElementById('pur-qa-brand').value.trim();
+  const brand = normalizeBrandText(document.getElementById('pur-qa-brand').value);
   const doseForm = document.getElementById('pur-qa-doseform').value;
   const strength = document.getElementById('pur-qa-strength').value.trim();
+  const generic = document.getElementById('pur-qa-generic').value.trim();
+  const category = document.getElementById('pur-qa-category').value.trim();
+  const manufacturer = document.getElementById('pur-qa-manufacturer').value.trim();
   const reorderLevel = parseInt(document.getElementById('pur-qa-reorder').value) || 10;
 
   if (!brand) return showErr('Brand Name আবশ্যক।');
@@ -1071,7 +1245,7 @@ async function submitQuickAddMedicine(i) {
 
   try {
     const id = genMedicineId(brand);
-    const res = await apiAddMedicine({ id, brand, generic: '', doseForm, strength, manufacturer: '', category: '', unit: 'পাতা', reorderLevel });
+    const res = await apiAddMedicine({ id, brand, generic, doseForm, strength, manufacturer, category, unit: 'পাতা', reorderLevel });
     if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'যোগ করে বসান'; return; }
 
     if (res.queued) {
@@ -1082,7 +1256,7 @@ async function submitQuickAddMedicine(i) {
       return;
     }
 
-    const newMed = { id, brand, generic: '', doseForm, strength, manufacturer: '', category: '', unit: 'পাতা', reorderLevel };
+    const newMed = { id, brand, generic, doseForm, strength, manufacturer, category, unit: 'পাতা', reorderLevel };
     const invRow = { medId: id, brand, doseForm, strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] };
     APP_STATE.medicines.push(newMed);
     APP_STATE.inventory.push(invRow);
@@ -1096,6 +1270,7 @@ async function submitQuickAddMedicine(i) {
     if (item.aiScanned) { item.aiMatched = true; }
 
     renderPurItems();
+    calcPurTotal(); // ✅ ফিক্স — আগে কল করা হতো না, তাই quick-add-এর পরে টোটাল/effective-discount stale থাকত
     toast(`"${brand}" ওষুধ মাস্টারে যোগ হয়েছে এবং এই লাইনে বসানো হয়েছে।`, 's');
     document.getElementById('pur-quickadd-modal')?.remove();
   } catch (err) {
