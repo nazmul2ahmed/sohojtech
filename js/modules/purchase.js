@@ -139,35 +139,6 @@ function renderPurchaseModule() {
   setTimeout(() => focusPurMedicineInput(0), 50);
 }
 
-// ────────────────────────────────────────────────────────────
-// ✅ নতুন — গ্রস-ছাড় বণ্টন হেল্পার
-// ইনলাইন (প্রতি-লাইন) ছাড় যে আইটেমগুলোতে নেই, শুধু সেগুলোর মধ্যে
-// grossDiscountAmt-কে তাদের নিজ নিজ গ্রস-মূল্যের অনুপাতে বণ্টন করে।
-// শেষ eligible আইটেমে বাকি (remainder) বসানো হয়, যাতে round2()-জনিত
-// পয়সা-লেভেল ড্রিফটেও sum(allocated) === grossDiscountAmt সবসময় ঠিক থাকে।
-// ────────────────────────────────────────────────────────────
-function distributeGrossDiscount(items, grossDiscountAmt, grossFn, inlineDiscFn) {
-  const map = new Map();
-  if (!grossDiscountAmt || grossDiscountAmt <= 0) return map;
-
-  const eligible = items.filter(it => !(inlineDiscFn(it) > 0));
-  const eligibleTotal = round2(eligible.reduce((a, it) => a + (grossFn(it) || 0), 0));
-  if (eligibleTotal <= 0) return map;
-
-  let allocated = 0;
-  eligible.forEach((it, idx) => {
-    const g = grossFn(it) || 0;
-    let share;
-    if (idx === eligible.length - 1) {
-      share = round2(grossDiscountAmt - allocated); // শেষ আইটেম বাকিটা শুষে নেয় — রাউন্ডিং ড্রিফট এড়াতে
-    } else {
-      share = round2(grossDiscountAmt * (g / eligibleTotal));
-    }
-    allocated = round2(allocated + share);
-    map.set(it, share);
-  });
-  return map;
-}
 
 function onPurGrossDiscPctChange() {
   const pct = clamp(parseFloat(document.getElementById('pur-grossdisc-pct').value) || 0, 0, 100);
