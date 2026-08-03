@@ -58,7 +58,18 @@ function buildPurchaseReceiptConfig(pur, pharmacy) {
     name: item.brand, qty: item.qty, unitPrice: item.purchasePrice,
     expiry: item.expiryDate || '', lineTotal: round2(item.qty * item.purchasePrice),
   }));
+
+  const grossSubtotal = round2((pur.items || []).reduce((a, item) => {
+    const grossUnit = item.grossUnitPrice !== undefined ? item.grossUnitPrice : item.purchasePrice;
+    return a + item.qty * grossUnit;
+  }, 0));
+  const discountTotal = round2(grossSubtotal - pur.totalCost);
+
   const totals = [
+    ...(discountTotal > 0 ? [
+      { label: 'সাবটোটাল (গ্রস)', value: grossSubtotal },
+      { label: 'ছাড়', value: -discountTotal },
+    ] : []),
     { label: 'মোট ক্রয়মূল্য', value: pur.totalCost, bold: true },
     { label: 'পেমেন্ট', value: pur.paymentType, isText: true },
   ];
