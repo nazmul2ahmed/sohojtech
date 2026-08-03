@@ -61,6 +61,26 @@ function renderPOSModule() {
           <i class="fa-solid fa-plus"></i> ওষুধ যোগ করুন
         </button>
 
+        <div class="bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-600 rounded-lg p-3 mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-300"><i class="fa-solid fa-tags text-brand mr-1"></i> সামগ্রিক (গ্রস) ছাড়</label>
+            <span id="pos-grossdisc-note" class="text-[10px] text-slate-400"></span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-2">শুধু যেসব আইটেমে ইনলাইন ছাড় নেই, সেগুলোতেই প্রযোজ্য — অনুপাতে বণ্টিত হবে।</p>
+          <div class="flex gap-2">
+            <div class="flex-1">
+              <label class="block text-[10px] text-slate-400 mb-1">ছাড় %</label>
+              <input type="number" id="pos-grossdisc-pct" value="0" min="0" max="100" step="0.01" oninput="onPOSGrossDiscPctChange()"
+                class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+            </div>
+            <div class="flex-1">
+              <label class="block text-[10px] text-slate-400 mb-1">ছাড় (৳)</label>
+              <input type="number" id="pos-grossdisc-amt" value="0" min="0" step="0.01" oninput="onPOSGrossDiscAmtChange()"
+                class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+            </div>
+          </div>
+        </div>
+
         <div class="grid grid-cols-3 gap-3 mb-4">
           <div>
             <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">মোট (৳)</label>
@@ -140,7 +160,7 @@ function initPOSCustomerDropdown() {
 // ITEM ROWS
 // ────────────────────────────────────────────────────────────
 function addPOSItem() {
-  APP_STATE.posItems.push({ medId: '', name: '', qty: 1, price: 0, costPrice: 0, discountPct: 0 });
+  APP_STATE.posItems.push({ medId: '', name: '', qty: 1, price: 0, costPrice: 0, discountPct: 0, discountAmt: 0 });
   renderPOSItems();
 }
 
@@ -160,6 +180,23 @@ function renderPOSItems() {
   container.innerHTML = APP_STATE.posItems.map((item, i) => {
     const currentMed = APP_STATE.inventory.find(m => m.medId === item.medId);
     const displayVal = currentMed ? buildMedDisplayText(currentMed) : '';
+    const gross = round2((item.qty || 0) * (item.price || 0));
+    const discountRow = `
+      <div class="col-span-12 flex flex-wrap items-end gap-2 mt-1 pt-2 border-t border-dashed border-slate-200 dark:border-slate-600">
+        <div class="w-20">
+          <label class="block text-[10px] text-slate-400 mb-1">ছাড় %</label>
+          <input type="number" id="pos-discpct-${i}" value="${item.discountPct || 0}" min="0" max="100" step="0.01"
+            oninput="onPOSDiscountPctChange(${i})" onblur="onPOSDiscountBlur(${i})"
+            class="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        </div>
+        <div class="w-24">
+          <label class="block text-[10px] text-slate-400 mb-1">ছাড় (৳)</label>
+          <input type="number" id="pos-discamt-${i}" value="${item.discountAmt || 0}" min="0" step="0.01"
+            oninput="onPOSDiscountAmtChange(${i})" onblur="onPOSDiscountBlur(${i})"
+            class="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        </div>
+        ${item.discountAmt > 0 ? `<div class="text-[11px] text-slate-400 ml-auto self-center">গ্রস ৳${fmt(gross)}</div>` : ''}
+      </div>`;
     return `
     <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-3 relative bg-slate-50 dark:bg-slate-900/30">
       <button onclick="removePOSItem(${i})" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">
@@ -189,16 +226,11 @@ function renderPOSItems() {
             onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})" onblur="onPOSFieldBlur(${i})"
             class="w-full px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
         </div>
-        <div class="col-span-4 md:col-span-1">
-          <label class="block text-[11px] text-slate-400 mb-1">Disc %</label>
-          <input type="number" id="pos-disc-${i}" value="${item.discountPct}" min="0" max="100"
-            onkeydown="onPOSFieldKeydown(event, ${i})" oninput="onPOSFieldChange(${i})" onblur="onPOSFieldBlur(${i})"
-            class="w-full px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
-        </div>
-        <div class="col-span-12 md:col-span-2 flex flex-col justify-end">
+        <div class="col-span-4 md:col-span-3 flex flex-col justify-end">
           <label class="block text-[11px] text-slate-400 mb-1">লাইন টোটাল</label>
           <div id="pos-linetotal-${i}" class="px-2.5 py-1.5 text-sm font-mono font-bold text-brand">৳০.০০</div>
         </div>
+        ${discountRow}
       </div>
     </div>`;
   }).join('');
@@ -210,7 +242,52 @@ function buildMedDisplayText(m) {
   return `${m.brand} ${m.doseForm || ''} ${m.strength || ''} [স্টক:${m.totalStock}]`.trim();
 }
 
+function onPOSDiscountPctChange(i) {
+  const item = APP_STATE.posItems[i];
+  if (!item) return;
+  const pct = clamp(parseFloat(document.getElementById(`pos-discpct-${i}`).value) || 0, 0, 100);
+  const gross = round2((item.qty || 0) * (item.price || 0));
+  item.discountPct = pct;
+  item.discountAmt = round2(gross * pct / 100);
+  const amtEl = document.getElementById(`pos-discamt-${i}`);
+  if (amtEl) amtEl.value = item.discountAmt;
+  calcPOSTotals();
+}
 
+function onPOSDiscountAmtChange(i) {
+  const item = APP_STATE.posItems[i];
+  if (!item) return;
+  const gross = round2((item.qty || 0) * (item.price || 0));
+  const amt = clamp(parseFloat(document.getElementById(`pos-discamt-${i}`).value) || 0, 0, gross);
+  item.discountAmt = amt;
+  item.discountPct = gross > 0 ? round2((amt / gross) * 100) : 0;
+  const pctEl = document.getElementById(`pos-discpct-${i}`);
+  if (pctEl) pctEl.value = item.discountPct;
+  calcPOSTotals();
+}
+
+function onPOSDiscountBlur(i) {
+  const item = APP_STATE.posItems[i];
+  if (!item) return;
+  const pctEl = document.getElementById(`pos-discpct-${i}`);
+  const amtEl = document.getElementById(`pos-discamt-${i}`);
+  if (pctEl) pctEl.value = item.discountPct || 0;
+  if (amtEl) amtEl.value = item.discountAmt || 0;
+}
+
+// ✅ নতুন — সামগ্রিক (গ্রস) ছাড় হ্যান্ডলার
+function onPOSGrossDiscPctChange() {
+  const pct = clamp(parseFloat(document.getElementById('pos-grossdisc-pct').value) || 0, 0, 100);
+  APP_STATE.posGrossDiscPct = pct;
+  calcPOSTotals();
+}
+function onPOSGrossDiscAmtChange() {
+  const eligibleGross = round2(APP_STATE.posItems.filter(it => !(it.discountAmt > 0))
+    .reduce((a, it) => a + (it.qty || 0) * (it.price || 0), 0));
+  const amt = clamp(parseFloat(document.getElementById('pos-grossdisc-amt').value) || 0, 0, eligibleGross);
+  APP_STATE.posGrossDiscPct = eligibleGross > 0 ? round2((amt / eligibleGross) * 100) : 0;
+  calcPOSTotals();
+}
 // ────────────────────────────────────────────────────────────
 // ✅ MEDICINE RESOLUTION (with disambiguation support)
 // ────────────────────────────────────────────────────────────
@@ -260,38 +337,39 @@ function applyMedicineToItem(i, med) {
 }
 
 function onPOSFieldChange(i) {
-  // ✅ ধাপ ০.২: qty/price >= 0, discountPct 0-100 এর মধ্যে বাধ্যতামূলক ক্ল্যাম্প —
-  // নেগেটিভ প্রাইস বা ১০০%+ ডিসকাউন্ট এখন থেকে কখনো state/billing-এ ঢুকবে না।
   const qty = Math.max(0, parseFloat(document.getElementById(`pos-qty-${i}`).value) || 0);
   const price = Math.max(0, parseFloat(document.getElementById(`pos-price-${i}`).value) || 0);
-  const discountPct = clamp(parseFloat(document.getElementById(`pos-disc-${i}`).value) || 0, 0, 100);
+  const item = APP_STATE.posItems[i];
+  item.qty = qty;
+  item.price = price;
 
-  APP_STATE.posItems[i].qty = qty;
-  APP_STATE.posItems[i].price = price;
-  APP_STATE.posItems[i].discountPct = discountPct;
-  updateLineTotal(i);
+  const gross = round2(qty * price);
+  item.discountAmt = round2(gross * (item.discountPct || 0) / 100);
+  const discAmtEl = document.getElementById(`pos-discamt-${i}`);
+  if (discAmtEl) discAmtEl.value = item.discountAmt;
+
   calcPOSTotals();
 }
 
-// ✅ ধাপ ০.২: blur হলে ইনপুট ফিল্ডের ভিজিবল মান clamp-করা state-এর সাথে sync —
-// টাইপ করার সময় (oninput) কিছু বদলানো হয় না, তাই দশমিক টাইপিং UX অক্ষত থাকে।
 function onPOSFieldBlur(i) {
   const item = APP_STATE.posItems[i];
   if (!item) return;
   const qtyEl = document.getElementById(`pos-qty-${i}`);
   const priceEl = document.getElementById(`pos-price-${i}`);
-  const discEl = document.getElementById(`pos-disc-${i}`);
   if (qtyEl) qtyEl.value = item.qty;
   if (priceEl) priceEl.value = item.price;
-  if (discEl) discEl.value = item.discountPct;
 }
 
 function updateLineTotal(i) {
   const item = APP_STATE.posItems[i];
-  const gross = (item.qty || 0) * (item.price || 0);
-  const lineTotal = round2(gross - (gross * (item.discountPct || 0) / 100));
+  const gross = round2((item.qty || 0) * (item.price || 0));
+  const effective = item.discountAmt > 0 ? item.discountAmt : (item._effectiveDiscountAmt || 0);
+  const net = round2(gross - effective);
   const el = document.getElementById(`pos-linetotal-${i}`);
-  if (el) el.textContent = '৳' + fmt(lineTotal);
+  if (!el) return;
+  el.innerHTML = effective > 0
+    ? `<span class="line-through text-slate-400 text-[10px] block">৳${fmt(gross)}</span>৳${fmt(net)}`
+    : '৳' + fmt(net);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -338,18 +416,45 @@ document.addEventListener('keydown', (e) => {
 // TOTALS
 // ────────────────────────────────────────────────────────────
 function calcPOSTotals() {
-  let medTotal = 0, discTotal = 0;
+  APP_STATE.posGrossDiscPct = APP_STATE.posGrossDiscPct || 0;
+
+  let medTotal = 0;
+  APP_STATE.posItems.forEach(item => { medTotal += (item.qty || 0) * (item.price || 0); });
+  medTotal = round2(medTotal);
+
+  const eligibleGross = round2(APP_STATE.posItems.filter(it => !(it.discountAmt > 0))
+    .reduce((a, it) => a + (it.qty || 0) * (it.price || 0), 0));
+  APP_STATE.posGrossDiscAmt = round2(eligibleGross * APP_STATE.posGrossDiscPct / 100);
+
+  const grossMap = distributeGrossDiscount(
+    APP_STATE.posItems, APP_STATE.posGrossDiscAmt,
+    it => (it.qty || 0) * (it.price || 0), it => it.discountAmt || 0
+  );
+
+  let discTotal = 0;
   APP_STATE.posItems.forEach(item => {
-    const gross = (item.qty || 0) * (item.price || 0);
-    medTotal += gross;
-    discTotal += gross * (item.discountPct || 0) / 100;
+    const inline = item.discountAmt || 0;
+    const effective = inline > 0 ? inline : (grossMap.get(item) || 0);
+    item._effectiveDiscountAmt = effective;
+    discTotal += effective;
   });
+  discTotal = round2(discTotal);
+
   const grandTotal = Math.max(0, round2(medTotal - discTotal));
   document.getElementById('pos-total').value = grandTotal.toFixed(2);
   onPOSCashChange();
   setText('bs-med', '৳' + fmt(medTotal));
   setText('bs-disc', '৳' + fmt(discTotal));
   setText('bs-total', '৳' + fmt(grandTotal));
+
+  const gdAmtEl = document.getElementById('pos-grossdisc-amt');
+  const gdPctEl = document.getElementById('pos-grossdisc-pct');
+  if (gdAmtEl && document.activeElement !== gdAmtEl) gdAmtEl.value = APP_STATE.posGrossDiscAmt;
+  if (gdPctEl && document.activeElement !== gdPctEl) gdPctEl.value = APP_STATE.posGrossDiscPct;
+  const gdNoteEl = document.getElementById('pos-grossdisc-note');
+  if (gdNoteEl) gdNoteEl.textContent = eligibleGross > 0 ? `প্রযোজ্য আইটেম-গ্রস: ৳${fmt(eligibleGross)}` : 'কোনো যোগ্য আইটেম নেই';
+
+  APP_STATE.posItems.forEach((_, i) => updateLineTotal(i));
 }
 
 function onPOSCashChange() {
@@ -371,14 +476,9 @@ async function submitPOSSale() {
   hideEl('pos-error');
   const custId = sdGetValue('sd-pos-customer');
   const validItems = APP_STATE.posItems.filter(i => i.medId && i.qty > 0);
-  const total = parseFloat(document.getElementById('pos-total').value) || 0;
-  const cashPaid = parseFloat(document.getElementById('pos-cash').value) || 0;
-  const due = parseFloat(document.getElementById('pos-due').value) || 0;
-  const date = document.getElementById('pos-date').value || todayStr();
 
   if (!custId) return showPOSError('গ্রাহক নির্বাচন করুন।');
   if (!validItems.length) return showPOSError('কমপক্ষে একটি ওষুধ যোগ করুন।');
-  if (due > 0 && custId === 'WALK_IN') return showPOSError('বাকি রাখতে হলে নিবন্ধিত গ্রাহক নির্বাচন করুন।');
 
   for (const item of validItems) {
     const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
@@ -387,14 +487,33 @@ async function submitPOSSale() {
     }
   }
 
+  calcPOSTotals(); // ✅ item._effectiveDiscountAmt ফ্রেশ নিশ্চিত
+
+  const total = parseFloat(document.getElementById('pos-total').value) || 0;
+  const cashPaid = parseFloat(document.getElementById('pos-cash').value) || 0;
+  const due = parseFloat(document.getElementById('pos-due').value) || 0;
+  const date = document.getElementById('pos-date').value || todayStr();
+
+  if (due > 0 && custId === 'WALK_IN') return showPOSError('বাকি রাখতে হলে নিবন্ধিত গ্রাহক নির্বাচন করুন।');
+
   const customer = APP_STATE.customers.find(c => c.id === custId);
   const custName = custId === 'WALK_IN' ? 'নগদ গ্রাহক' : (customer?.name || custId);
   const invoiceNo = genInvoiceNo();
 
+  // ✅ item.discountPct চূড়ান্ত (ইনলাইন+গ্রস মিলিয়ে একক %) — accounts.js/
+  // dashboard.js/analytics.js/receipt.js এই ফিল্ড থেকেই ছাড় গণনা করে, তাই
+  // ওদের কোথাও কোনো পরিবর্তন লাগেনি
+  const finalItems = validItems.map(i => {
+    const gross = round2((i.qty || 0) * (i.price || 0));
+    const effective = Math.min(i._effectiveDiscountAmt || 0, gross);
+    return { ...i, discountPct: gross > 0 ? round2((effective / gross) * 100) : 0 };
+  });
+
   const sale = {
     invoiceNo, date, customerId: custId, customerName: custName,
-    items: validItems.map(i => ({ ...i })),
+    items: finalItems,
     totalBill: total, cashPaid, due, type: due > 0 ? 'বাকি' : 'নগদ',
+    grossDiscountPct: APP_STATE.posGrossDiscPct || 0,
   };
 
   const btn = document.getElementById('pos-submit-btn');
@@ -415,15 +534,15 @@ async function submitPOSSale() {
       toast(res.message, 'w');
       resetPOS();
       refreshSyncBadge();
-      openReceiptModal('sale', sale); // ✅ ধাপ ৩০: অফলাইনেও কাউন্টারে ফিজিক্যাল রিসিট লাগে
+      openReceiptModal('sale', sale);
     } else {
-      validItems.forEach(item => deductStockFEFO(item.medId, item.qty));
+      finalItems.forEach(item => deductStockFEFO(item.medId, item.qty));
       if (customer) applyCustomerDueChange(custId, due, cashPaid);
       APP_STATE.sales.push(sale);
       toast(res.message, 's');
       resetPOS();
       renderTodayPOSSales();
-      openReceiptModal('sale', sale); // ✅ ধাপ ৩০
+      openReceiptModal('sale', sale);
     }
     btn.disabled = false;
     btn.innerHTML = idleHTML;
@@ -445,6 +564,7 @@ function resetPOS() {
   closeMedDisambiguation();
   APP_STATE.posDate = null; APP_STATE.posCashPaid = null; APP_STATE.posCustomerId = null;
   APP_STATE.posItems = [];
+  APP_STATE.posGrossDiscPct = 0; APP_STATE.posGrossDiscAmt = 0;
   sdClear('sd-pos-customer');
   sdSelect('sd-pos-customer', 'WALK_IN', 'নগদ গ্রাহক (Walk-In)');
   document.getElementById('pos-cash').value = '';
