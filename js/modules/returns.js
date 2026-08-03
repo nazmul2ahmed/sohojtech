@@ -5,18 +5,19 @@ function renderReturnsModule() {
   if (!c) return;
   APP_STATE.retMode = APP_STATE.retMode || 'customer';
   c.innerHTML = `
-    <div class="flex gap-2 mb-4">
+    <div class="flex gap-2 mb-4 flex-wrap">
       <button onclick="setRetMode('customer')" id="ret-tab-customer" class="btn flex-1"></button>
       <button onclick="setRetMode('supplier')" id="ret-tab-supplier" class="btn flex-1"></button>
+      <button onclick="setRetMode('noInvoice')" id="ret-tab-noinvoice" class="btn flex-1"></button>
     </div>
     <div id="ret-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-3 py-2 mb-3"></div>
     <div id="ret-form"></div>
     <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden mt-4">
       <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center gap-2">
-  <h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> রিটার্ন তালিকা</h6>
-  <input type="date" id="ret-list-date" value="${APP_STATE.retListDate || todayStr()}" onchange="onRetListDateChange(this.value)"
-    class="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
-</div>
+        <h6 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> রিটার্ন তালিকা</h6>
+        <input type="date" id="ret-list-date" value="${APP_STATE.retListDate || todayStr()}" onchange="onRetListDateChange(this.value)"
+          class="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+      </div>
       <div id="ret-today-list" class="max-h-72 overflow-y-auto"></div>
     </div>`;
   updateRetTabsUI();
@@ -24,16 +25,21 @@ function renderReturnsModule() {
   renderTodayReturns();
 }
 
-function setRetMode(m) { APP_STATE.retMode = m; updateRetTabsUI(); renderRetForm(); }
+function setRetMode(m) {
+  APP_STATE.retMode = m;
+  updateRetTabsUI();
+  renderRetForm();
+}
 
 function updateRetTabsUI() {
-  const isCust = APP_STATE.retMode === 'customer';
-  const cb = document.getElementById('ret-tab-customer'), sb = document.getElementById('ret-tab-supplier');
+  const cb = document.getElementById('ret-tab-customer'), sb = document.getElementById('ret-tab-supplier'), nb = document.getElementById('ret-tab-noinvoice');
   if (!cb) return;
   cb.textContent = 'কাস্টমার রিটার্ন';
   sb.textContent = 'সাপ্লায়ার রিটার্ন / এক্সপায়ারি';
-  cb.className = `btn flex-1 ${isCust ? 'btn-primary' : 'btn-secondary'}`;
-  sb.className = `btn flex-1 ${!isCust ? 'btn-warning' : 'btn-secondary'}`;
+  nb.textContent = 'ইনভয়েস ছাড়া রিটার্ন';
+  cb.className = `btn flex-1 ${APP_STATE.retMode === 'customer' ? 'btn-primary' : 'btn-secondary'}`;
+  sb.className = `btn flex-1 ${APP_STATE.retMode === 'supplier' ? 'btn-warning' : 'btn-secondary'}`;
+  nb.className = `btn flex-1 ${APP_STATE.retMode === 'noInvoice' ? 'btn-primary' : 'btn-secondary'}`;
 }
 
 function returnedQty(refId, medId, type) {
@@ -87,7 +93,7 @@ function renderRetForm() {
       </div>`;
     const opts = APP_STATE.sales.map(s => ({ value: s.invoiceNo, label: s.invoiceNo + ' — ' + s.customerName, sub: s.date + ' • ৳' + fmt(s.totalBill) }));
     createSD('sd-ret-invoice', opts, onRetInvoiceSelect, '— Invoice খুঁজুন —');
-  } else {
+  } else if (APP_STATE.retMode === 'supplier') {
     box.innerHTML = `
       <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
         <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Purchase নির্বাচন করুন <span class="text-red-500">*</span></label>
@@ -97,6 +103,8 @@ function renderRetForm() {
       </div>`;
     const opts = APP_STATE.purchases.map(p => ({ value: p.purchaseId, label: p.purchaseId + ' — ' + p.supplierName, sub: p.date + ' • ৳' + fmt(p.totalCost) }));
     createSD('sd-ret-purchase', opts, onRetPurchaseSelect, '— Purchase খুঁজুন —');
+  } else {
+    renderNoInvoiceReturnForm();
   }
 }
 
@@ -412,4 +420,236 @@ async function deleteReturnConfirm(returnId) {
     toast(res.message, 's');
     renderTodayReturns();
   } catch (err) { showFatalError('রিটার্ন মুছতে সমস্যা:\n' + humanizeError(err), err); }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ নতুন — ইনভয়েস ছাড়া রিটার্ন। গ্রাহক পুরনো ইনভয়েস হারিয়ে ফেললে,
+// নির্দিষ্ট invoice-এ লিংক না করে বিক্রয়মূল্য (MRP না) থেকে জেনেরিক
+// ছাড় (ডিফল্ট ১০%) কেটে নগদ ফেরত দেওয়া হয়। কোনো invoice-cap validation
+// প্রযোজ্য না, সবসময় নগদ ফেরত (customer-account ছোঁয়া হয় না)।
+// ════════════════════════════════════════════════════════════
+const NO_INVOICE_RETURN_DEFAULT_DISCOUNT_PCT = 10;
+
+function renderNoInvoiceReturnForm() {
+  const box = document.getElementById('ret-form');
+  APP_STATE.noInvItems = APP_STATE.noInvItems || [];
+  APP_STATE.noInvDiscountPct = (APP_STATE.noInvDiscountPct != null) ? APP_STATE.noInvDiscountPct : NO_INVOICE_RETURN_DEFAULT_DISCOUNT_PCT;
+  if (!APP_STATE.noInvItems.length) APP_STATE.noInvItems.push({ medId: '', name: '', qty: 1, sellPrice: 0 });
+
+  box.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+      <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-4">
+        <i class="fa-solid fa-circle-info mr-1"></i> ইনভয়েস প্রমাণ ছাড়া রিটার্ন — বিক্রয়মূল্য (MRP না) থেকে জেনেরিক ছাড় কেটে নগদ ফেরত। ইনভয়েস দেখাতে পারলে "কাস্টমার রিটার্ন" ট্যাব থেকে সঠিক ক্রয়-মূল্যে করুন।
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">গ্রাহকের নাম (ঐচ্ছিক)</label>
+          <input type="text" id="noinv-cust-name" placeholder="নাম না জানলে খালি রাখুন"
+            class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">জেনেরিক ছাড় % (বিক্রয়মূল্য থেকে)</label>
+          <input type="number" id="noinv-disc-pct" value="${APP_STATE.noInvDiscountPct}" min="0" max="100" step="0.01"
+            oninput="onNoInvDiscPctChange(this.value)"
+            class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        </div>
+      </div>
+      <div id="noinv-items-list" class="space-y-2 mb-3"></div>
+      <button onclick="addNoInvoiceReturnItem()" class="btn btn-brand-outline btn-sm mb-4">
+        <i class="fa-solid fa-plus"></i> ওষুধ যোগ করুন
+      </button>
+      <div class="flex justify-between items-center mb-3 bg-brand/10 rounded-lg px-3 py-2">
+        <span class="text-sm font-semibold">মোট ফেরত পরিমাণ (নগদ)</span><span id="noinv-total" class="font-mono font-bold text-brand">৳০.০০</span>
+      </div>
+      <button id="noinv-submit-btn" onclick="submitNoInvoiceReturn()" class="btn btn-primary btn-block">রিটার্ন নিশ্চিত করুন (নগদ ফেরত)</button>
+    </div>`;
+
+  renderNoInvoiceReturnItems();
+}
+
+function addNoInvoiceReturnItem() {
+  APP_STATE.noInvItems.push({ medId: '', name: '', qty: 1, sellPrice: 0 });
+  renderNoInvoiceReturnItems();
+}
+
+function removeNoInvoiceReturnItem(i) {
+  if (APP_STATE.noInvItems.length <= 1) { toast('কমপক্ষে একটি সারি থাকতে হবে।', 'w'); return; }
+  closeMedDisambiguation();
+  APP_STATE.noInvItems.splice(i, 1);
+  renderNoInvoiceReturnItems();
+}
+
+function buildNoInvMedDisplayText(m) {
+  return `${m.brand} ${m.doseForm || ''} ${m.strength || ''}`.trim();
+}
+
+function renderNoInvoiceReturnItems() {
+  const container = document.getElementById('noinv-items-list');
+  if (!container) return;
+  const discPct = APP_STATE.noInvDiscountPct || 0;
+
+  container.innerHTML = APP_STATE.noInvItems.map((item, i) => {
+    const unitRefund = round2((item.sellPrice || 0) * (1 - discPct / 100));
+    const lineTotal = round2(unitRefund * (item.qty || 0));
+    return `
+    <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-3 relative bg-slate-50 dark:bg-slate-900/30">
+      <button onclick="removeNoInvoiceReturnItem(${i})" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+      <div class="grid grid-cols-12 gap-2">
+        <div class="col-span-12 md:col-span-6">
+          <label class="block text-[11px] text-slate-400 mb-1">ওষুধ <span class="text-red-500">*</span></label>
+          <input type="text" id="noinv-med-input-${i}" list="noinv-med-list-${i}" value="${esc(item.medId ? buildNoInvMedDisplayText(item) : '')}"
+            placeholder="— ওষুধ সার্চ করুন —" autocomplete="off"
+            onchange="onNoInvMedicineChange(${i})" onkeydown="onNoInvMedicineKeydown(event, ${i})"
+            class="w-full px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
+          <datalist id="noinv-med-list-${i}">
+            ${APP_STATE.medicines.map(m => `<option value="${esc(m.brand + ' ' + (m.doseForm||'') + ' ' + (m.strength||''))}"></option>`).join('')}
+          </datalist>
+        </div>
+        <div class="col-span-4 md:col-span-2">
+          <label class="block text-[11px] text-slate-400 mb-1">Qty</label>
+          <input type="number" id="noinv-qty-${i}" value="${item.qty}" min="1"
+            oninput="onNoInvFieldChange(${i})" class="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
+        </div>
+        <div class="col-span-4 md:col-span-2">
+          <label class="block text-[11px] text-slate-400 mb-1">বিক্রয়মূল্য</label>
+          <div class="px-2 py-1.5 text-sm font-mono text-slate-500">৳${fmt(item.sellPrice || 0)}</div>
+        </div>
+        <div class="col-span-4 md:col-span-2 flex flex-col justify-end">
+          <label class="block text-[11px] text-slate-400 mb-1">ফেরত (৳)</label>
+          <div id="noinv-linetotal-${i}" class="px-2 py-1.5 text-sm font-mono font-bold text-brand">৳${fmt(lineTotal)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  calcNoInvoiceReturnTotal();
+}
+
+function onNoInvMedicineChange(i) {
+  const inputEl = document.getElementById(`noinv-med-input-${i}`);
+  if (!inputEl) return;
+  const val = inputEl.value;
+  const result = resolveMedicineMatch(val, APP_STATE.medicines, buildNoInvMedDisplayText);
+  if (result.type === 'exact') { closeMedDisambiguation(); applyMedicineToNoInvItem(i, result.match); return; }
+  if (result.type === 'ambiguous') {
+    showMedDisambiguation(inputEl, result.matches, buildNoInvMedDisplayText, (chosen) => {
+      inputEl.value = buildNoInvMedDisplayText(chosen);
+      applyMedicineToNoInvItem(i, chosen);
+    });
+    return;
+  }
+  applyMedicineToNoInvItem(i, null);
+  if (val.trim()) toast('ওষুধ খুঁজে পাওয়া যায়নি।', 'w');
+}
+
+function onNoInvMedicineKeydown(e, i) {
+  const inputEl = document.getElementById(`noinv-med-input-${i}`);
+  if (isMedDisambiguationOpenFor(inputEl) && medDisambiguationHandleKey(e)) return;
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  onNoInvMedicineChange(i);
+}
+
+function applyMedicineToNoInvItem(i, med) {
+  const item = APP_STATE.noInvItems[i];
+  if (med) {
+    const inv = APP_STATE.inventory.find(x => x.medId === med.id);
+    item.medId = med.id; item.name = med.brand; item.doseForm = med.doseForm; item.strength = med.strength;
+    item.sellPrice = inv?.sellPrice || 0;
+  } else {
+    item.medId = ''; item.name = ''; item.sellPrice = 0;
+  }
+  renderNoInvoiceReturnItems();
+}
+
+function onNoInvFieldChange(i) {
+  const item = APP_STATE.noInvItems[i];
+  if (!item) return;
+  item.qty = Math.max(0, parseFloat(document.getElementById(`noinv-qty-${i}`).value) || 0);
+  calcNoInvoiceReturnTotal();
+}
+
+function onNoInvDiscPctChange(val) {
+  APP_STATE.noInvDiscountPct = clamp(parseFloat(val) || 0, 0, 100);
+  renderNoInvoiceReturnItems();
+}
+
+function calcNoInvoiceReturnTotal() {
+  const discPct = APP_STATE.noInvDiscountPct || 0;
+  let total = 0;
+  APP_STATE.noInvItems.forEach((item, i) => {
+    const unitRefund = round2((item.sellPrice || 0) * (1 - discPct / 100));
+    const lineTotal = round2(unitRefund * (item.qty || 0));
+    total += lineTotal;
+    const el = document.getElementById(`noinv-linetotal-${i}`);
+    if (el) el.textContent = '৳' + fmt(lineTotal);
+  });
+  setText('noinv-total', '৳' + fmt(round2(total)));
+}
+
+async function submitNoInvoiceReturn() {
+  if (guardReadOnly()) return;
+  hideEl('ret-error');
+  const discPct = APP_STATE.noInvDiscountPct || 0;
+  const custName = document.getElementById('noinv-cust-name')?.value.trim() || 'অজানা গ্রাহক (নো-ইনভয়েস)';
+
+  const items = [];
+  let amount = 0, cost = 0;
+  for (const item of APP_STATE.noInvItems) {
+    if (!item.medId || !item.qty || item.qty <= 0) continue;
+    const unitRefund = round2((item.sellPrice || 0) * (1 - discPct / 100));
+    const lineTotal = round2(unitRefund * item.qty);
+    const inv = APP_STATE.inventory.find(m => m.medId === item.medId);
+    const costPrice = inv?.batches?.[0]?.cost || 0; // ✅ আনুমানিক — আসল ব্যাচ অজানা
+    amount += lineTotal;
+    cost += costPrice * item.qty;
+    items.push({ medId: item.medId, name: item.name, qty: item.qty, price: unitRefund, discountPct: discPct, costPrice, consumedBatches: null });
+  }
+  if (!items.length) return showRetError('কমপক্ষে একটি ওষুধের পরিমাণ দিন।');
+  amount = round2(amount);
+  cost = round2(cost);
+
+  const returnDoc = {
+    returnId: 'RET-' + Date.now(), date: todayStr(), returnType: 'customer',
+    refId: 'NO-INVOICE', refName: custName, partyId: null,
+    items, amount, cost, refundMethod: 'নগদ ফেরত',
+    noInvoice: true, genericDiscountPct: discPct,
+  };
+
+  const btn = document.getElementById('noinv-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> প্রক্রিয়াকরণ হচ্ছে...';
+
+  try {
+    // ✅ apiSubmitCustomerReturn() পুনর্ব্যবহার — custId null, dueReduction 0
+    const res = await apiSubmitCustomerReturn(returnDoc, null, 0);
+    if (!res.success) {
+      showRetError(res.message);
+      btn.disabled = false;
+      btn.textContent = 'রিটার্ন নিশ্চিত করুন (নগদ ফেরত)';
+      return;
+    }
+
+    if (res.queued) {
+      toast(res.message, 'w');
+      refreshSyncBadge();
+      openReceiptModal('return', returnDoc);
+    } else {
+      items.forEach(item => restockItem(item.medId, item.qty, item.costPrice, item.consumedBatches));
+      APP_STATE.returns.push(returnDoc);
+      toast(res.message, 's');
+      openReceiptModal('return', returnDoc);
+    }
+
+    APP_STATE.noInvItems = [{ medId: '', name: '', qty: 1, sellPrice: 0 }];
+    document.getElementById('noinv-cust-name').value = '';
+    renderRetForm();
+    renderTodayReturns();
+  } catch (err) {
+    showFatalError('রিটার্ন সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
+    btn.disabled = false;
+    btn.textContent = 'রিটার্ন নিশ্চিত করুন (নগদ ফেরত)';
+  }
 }
