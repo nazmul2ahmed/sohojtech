@@ -207,7 +207,7 @@ function renderStaffAccessCard(settings) {
           <input type="radio" name="ai-staff-access" value="owner_only" ${!enabled ? 'checked' : ''}/> শুধু আমি (মালিক)
         </label>
         <label class="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="radio" name="ai-staff-access" value="enabled" ${enabled ? 'checked' : ''}/> ম্যানেজার/ক্যাশিয়ারও পারবে
+          <input type="radio" name="ai-staff-access" value="enabled" ${enabled ? 'checked' : ''}/> ম্যানেজার পারবেন (ক্যাশিয়ার পারবেন না)
         </label>
       </div>
       <p class="text-[11px] text-amber-600"><i class="fa-solid fa-circle-info mr-1"></i>AI কল করলে আপনার নিজের API billing-এ খরচ যোগ হয় — স্টাফদের অনুমতি দিলে তারাও এই খরচ তৈরি করতে পারবে।</p>
