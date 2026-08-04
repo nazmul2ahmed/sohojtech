@@ -305,7 +305,7 @@ function renderPremiumAddonCard(addon) {
       ${active ? `
         <p class="text-sm text-emerald-600 font-semibold mb-1"><i class="fa-solid fa-circle-check mr-1"></i>সক্রিয়</p>
         <p class="text-xs text-slate-500">আজকের ব্যবহার: ${addon.dailyUsageCount || 0} / ${addon.dailyCap || 20}</p>
-        ${addon.expiresAt ? `<p class="text-xs text-slate-500">মেয়াদ শেষ: ${esc(new Date(addon.expiresAt).toLocaleDateString('bn-BD'))}</p>` : ''}
+        ${addon.expiresAt ? `<p class="text-xs text-slate-500">মেয়াদ শেষ: ${esc((addon.expiresAt.toDate ? addon.expiresAt.toDate() : new Date(addon.expiresAt)).toLocaleDateString('bn-BD'))}</p>` : ''}
       ` : `
         <p class="text-sm text-slate-500 mb-2">এই সেবা সাবস্ক্রাইব করা নেই — নিজের key কনফিগার না থাকলে বা সেগুলো ব্যর্থ হলে এই ফলব্যাক পাওয়া যাবে না।</p>
         <button onclick="openSubscriptionPromo('trial')" class="btn btn-brand-outline btn-sm">প্ল্যান দেখুন</button>
