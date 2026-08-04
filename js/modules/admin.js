@@ -453,3 +453,114 @@ async function revokeAiAddon(uid) {
     await loadAndRenderAiAccessModal(uid);
   } catch (err) { toast('ব্যর্থ: ' + err.message, 'e'); }
 }
+
+
+// ════════════════════════════════════════════════════════════
+// ✅ AI-B addendum: PLATFORM SHARED AI KEY — platformConfig/aiSharedProvider
+// এটা প্ল্যাটফর্মের নিজস্ব shared key (tenant-এর BYOK থেকে আলাদা) —
+// premium-addon সক্রিয় থাকা ক্লায়েন্টরা এই key দিয়ে AI ব্যবহার করবেন,
+// নিজের key ছাড়াই। শুধু admin — কোনো tenant owner/staff এটা দেখতে/
+// বদলাতে পারবে না (Firestore rules: platformConfig/{docId} → isAdmin())।
+//
+// ⚠️ এটা js/staff.js (owner-নিয়ন্ত্রিত নিজস্ব-দোকান-স্টাফ ম্যানেজমেন্ট)
+// থেকে ইচ্ছাকৃতভাবে আলাদা রাখা হয়েছে — staff.js প্রতিটা tenant owner
+// নিজে দেখতে পান, সেখানে এই platform-level secret বসালে প্রতিটা owner
+// এটা দেখে/বদলে ফেলতে পারতেন — গুরুতর নিরাপত্তা-ঝুঁকি।
+// ════════════════════════════════════════════════════════════
+async function renderPlatformAiKeyPanel() {
+  const box = document.getElementById('admin-content');
+  if (document.getElementById('platform-ai-key-box')) return;
+  const div = document.createElement('div');
+  div.id = 'platform-ai-key-box';
+  div.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mt-4';
+  div.innerHTML = `
+    <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2">
+      <i class="fa-solid fa-server text-brand"></i> প্ল্যাটফর্ম শেয়ার্ড AI Key (শুধু Admin)
+    </h5>
+    <p class="text-[11px] text-slate-400 mb-4">প্রিমিয়াম-অ্যাডঅন সক্রিয় থাকা ক্লায়েন্টরা এই key দিয়ে AI ব্যবহার করবেন — নিজের key ছাড়াই। এই key কোনো tenant owner/staff কখনো দেখতে পারবেন না।</p>
+    <div id="platform-ai-key-status" class="text-xs mb-3"><i class="fa-solid fa-spinner fa-spin mr-1"></i>লোড হচ্ছে...</div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+      <div>
+        <label class="block text-[11px] text-slate-400 mb-1">Provider</label>
+        <select id="pak-provider" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white">
+          <option value="gemini">Google Gemini</option>
+          <option value="openai">OpenAI</option>
+          <option value="claude">Anthropic Claude</option>
+        </select>
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-[11px] text-slate-400 mb-1">API Key</label>
+        <div class="flex gap-2">
+          <input type="password" id="pak-apikey" placeholder="নতুন key পেস্ট করুন" class="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+          <button type="button" id="pak-toggle-visibility" class="btn-icon"><i class="fa-solid fa-eye"></i></button>
+        </div>
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="block text-[11px] text-slate-400 mb-1">দৈনিক গ্লোবাল সীমা (সব ক্লায়েন্ট মিলিয়ে)</label>
+      <input type="number" id="pak-globalcap" min="1" value="500" class="w-full md:w-48 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+    </div>
+    <div class="flex gap-2">
+      <button id="pak-save-btn" onclick="savePlatformAiKey()" class="btn btn-primary">সংরক্ষণ করুন</button>
+      <button id="pak-delete-btn" onclick="deletePlatformAiKey()" class="btn btn-danger-outline">মুছে ফেলুন</button>
+    </div>
+  `;
+  box.appendChild(div);
+  await loadPlatformAiKeyStatus();
+
+  document.getElementById('pak-toggle-visibility').addEventListener('click', () => {
+    const inp = document.getElementById('pak-apikey');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  });
+}
+
+async function loadPlatformAiKeyStatus() {
+  const statusEl = document.getElementById('platform-ai-key-status');
+  if (!statusEl) return;
+  try {
+    const doc = await fbDb.collection('platformConfig').doc('aiSharedProvider').get();
+    if (!doc.exists || !doc.data().apiKey) {
+      statusEl.innerHTML = `<span class="text-slate-400"><i class="fa-solid fa-circle-xmark mr-1"></i>এখনো কনফিগার করা হয়নি</span>`;
+      return;
+    }
+    const d = doc.data();
+    document.getElementById('pak-provider').value = d.provider || 'gemini';
+    document.getElementById('pak-globalcap').value = d.dailyGlobalCap || 500;
+    statusEl.innerHTML = `<span class="text-emerald-600"><i class="fa-solid fa-circle-check mr-1"></i>সক্রিয় — Provider: ${esc(d.provider || '—')}, Key: ${esc(maskKey(d.apiKey))}</span>`;
+  } catch (err) {
+    statusEl.innerHTML = `<span class="text-red-500">লোড ব্যর্থ: ${esc(err.message)}</span>`;
+  }
+}
+
+async function savePlatformAiKey() {
+  const provider = document.getElementById('pak-provider').value;
+  const apiKey = document.getElementById('pak-apikey').value.trim();
+  const dailyGlobalCap = parseInt(document.getElementById('pak-globalcap').value, 10) || 500;
+  if (!apiKey) { toast('নতুন key দিন।', 'w'); return; }
+
+  const btn = document.getElementById('pak-save-btn');
+  btn.disabled = true; btn.textContent = 'সংরক্ষণ হচ্ছে...';
+  try {
+    await fbDb.collection('platformConfig').doc('aiSharedProvider').set({
+      provider, apiKey, dailyGlobalCap,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: APP_STATE.currentUser.email,
+    }, { merge: true });
+    toast('প্ল্যাটফর্ম শেয়ার্ড AI key সংরক্ষিত হয়েছে।', 's');
+    document.getElementById('pak-apikey').value = '';
+    await loadPlatformAiKeyStatus();
+  } catch (err) {
+    toast('ব্যর্থ: ' + err.message, 'e');
+  } finally {
+    btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন';
+  }
+}
+
+async function deletePlatformAiKey() {
+  if (!confirm('প্ল্যাটফর্ম শেয়ার্ড AI key মুছে ফেলবেন? এটা মুছলে premium-addon থাকা সব ক্লায়েন্টের শেয়ার্ড-AI সাথে সাথে বন্ধ হয়ে যাবে।')) return;
+  try {
+    await fbDb.collection('platformConfig').doc('aiSharedProvider').delete();
+    toast('মুছে ফেলা হয়েছে।', 's');
+    await loadPlatformAiKeyStatus();
+  } catch (err) { toast('ব্যর্থ: ' + err.message, 'e'); }
+}
