@@ -491,6 +491,10 @@ function renderNoInvoiceReturnItems() {
   container.innerHTML = APP_STATE.noInvItems.map((item, i) => {
     const unitRefund = round2((item.sellPrice || 0) * (1 - discPct / 100));
     const lineTotal = round2(unitRefund * (item.qty || 0));
+    // ✅ ফিক্স: item.brand না (noInvItems-এন্ট্রিতে এই ফিল্ড নেই — এখানে
+    // item.name ব্যবহৃত হয়), তাই buildNoInvMedDisplayText() সরাসরি item-এ
+    // কল করলে "undefined" আসত। এখানে item.name দিয়ে সরাসরি বানানো হচ্ছে।
+    const displayVal = item.medId ? `${item.name} ${item.doseForm || ''} ${item.strength || ''}`.trim() : '';
     return `
     <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-3 relative bg-slate-50 dark:bg-slate-900/30">
       <button onclick="removeNoInvoiceReturnItem(${i})" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">
@@ -499,7 +503,7 @@ function renderNoInvoiceReturnItems() {
       <div class="grid grid-cols-12 gap-2">
         <div class="col-span-12 md:col-span-6">
           <label class="block text-[11px] text-slate-400 mb-1">ওষুধ <span class="text-red-500">*</span></label>
-          <input type="text" id="noinv-med-input-${i}" list="noinv-med-list-${i}" value="${esc(item.medId ? buildNoInvMedDisplayText(item) : '')}"
+          <input type="text" id="noinv-med-input-${i}" list="noinv-med-list-${i}" value="${esc(displayVal)}"
             placeholder="— ওষুধ সার্চ করুন —" autocomplete="off"
             onchange="onNoInvMedicineChange(${i})" onkeydown="onNoInvMedicineKeydown(event, ${i})"
             class="w-full px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand"/>
