@@ -87,17 +87,23 @@ function renderAdminUserList() {
     if (u.role === 'owner') return '<span class="text-[11px] text-slate-400">—</span>';
     const es = userEffectiveStatus(u);
     const durOpts = SUB_DURATIONS.map(d => `<option value="${d.days}">${d.label}</option>`).join('');
+    // ✅ AI-B: AI অ্যাক্সেস প্যানেল বাটন — status নির্বিশেষে সব non-owner রো-তে
+    // (BYOK/Addon admin আগে থেকেও প্রস্তুত রাখতে পারবেন, actual ব্যবহার
+    // তখনও ownerHasPaidAccessAi()-এর ওপর নির্ভরশীল — AiProxy.gs দেখুন)
+    const aiBtn = `<button onclick="openAiAccessModal('${u.uid}')" title="AI অ্যাক্সেস ম্যানেজ করুন" class="text-purple-600 hover:underline text-xs ml-2"><i class="fa-solid fa-robot"></i></button>`;
     if (es === 'approved') {
-      return `<div class="flex items-center gap-1 justify-center">
+      return `<div class="flex items-center gap-1 justify-center flex-wrap">
         <select id="dur-${u.uid}" class="text-[11px] border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 bg-white dark:bg-slate-700">${durOpts}</select>
         <button onclick="extendSubscription('${u.uid}')" class="text-brand hover:underline text-xs"><i class="fa-solid fa-arrows-rotate mr-1"></i>Extend</button>
         <button onclick="setUserStatus('${u.uid}','revoked')" class="text-red-500 hover:underline text-xs ml-2"><i class="fa-solid fa-ban"></i></button>
+        ${aiBtn}
       </div>`;
     }
-    return `<div class="flex items-center gap-1 justify-center">
+    return `<div class="flex items-center gap-1 justify-center flex-wrap">
       <select id="dur-${u.uid}" class="text-[11px] border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 bg-white dark:bg-slate-700">${durOpts}</select>
       <button onclick="approveWithDuration('${u.uid}')" class="text-emerald-600 hover:underline text-xs"><i class="fa-solid fa-check mr-1"></i>Approve</button>
       ${es !== 'revoked' ? `<button onclick="setUserStatus('${u.uid}','revoked')" class="text-red-500 hover:underline text-xs ml-2"><i class="fa-solid fa-ban"></i></button>` : ''}
+      ${aiBtn}
     </div>`;
   };
 
@@ -282,4 +288,168 @@ async function uploadGlobalMedCsv() {
   } else {
     statusEl.textContent = 'ব্যর্থ: ' + res.message;
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ AI-B: AI ACCESS MANAGEMENT — owner প্রতি BYOK (lifetime) +
+// Premium Addon (duration-based) — দুটো স্বতন্ত্র admin-controlled টগল।
+// ════════════════════════════════════════════════════════════
+const AI_ADDON_DURATIONS = [
+  { label: '৭ দিন', days: 7 }, { label: '৩০ দিন', days: 30 },
+  { label: '৯০ দিন', days: 90 }, { label: '১ বছর', days: 365 },
+];
+
+function formatAiTimestamp(ts) {
+  if (!ts) return '—';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('bn-BD') + ' ' + d.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function openAiAccessModal(uid) {
+  const u = (APP_STATE.adminUsers || []).find(x => x.uid === uid);
+  if (!u) return;
+  document.getElementById('ai-access-modal')?.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'ai-access-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-robot text-brand mr-1"></i> AI অ্যাক্সেস</h4>
+      <p class="text-xs text-slate-400 mb-4">${esc(u.displayName || '')} — ${esc(u.email)}</p>
+      <div id="ai-access-body" class="text-center text-slate-400 text-sm py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>লোড হচ্ছে...</div>
+      <button onclick="document.getElementById('ai-access-modal').remove()" class="btn btn-secondary btn-block mt-4">বন্ধ করুন</button>
+    </div>`;
+  document.body.appendChild(modal);
+  openAppModal('ai-access-modal', () => document.getElementById('ai-access-modal')?.remove());
+
+  await loadAndRenderAiAccessModal(uid);
+}
+
+async function loadAndRenderAiAccessModal(uid) {
+  const body = document.getElementById('ai-access-body');
+  if (!body) return;
+  try {
+    const [accessDoc, addonDoc] = await Promise.all([
+      fbDb.collection('users').doc(uid).collection('config').doc('aiAccess').get(),
+      fbDb.collection('users').doc(uid).collection('config').doc('aiPremiumAddon').get(),
+    ]);
+    const access = accessDoc.exists ? accessDoc.data() : { byokEnabled: false };
+    const addon = addonDoc.exists ? addonDoc.data() : null;
+    renderAiAccessBody(uid, access, addon);
+  } catch (err) {
+    if (document.getElementById('ai-access-body')) {
+      body.innerHTML = `<div class="text-red-500 text-xs py-4">লোড ব্যর্থ: ${esc(err.message)}</div>`;
+    }
+  }
+}
+
+function renderAiAccessBody(uid, access, addon) {
+  const body = document.getElementById('ai-access-body');
+  if (!body) return;
+  const byokOn = !!access.byokEnabled;
+  const addonExpiryMs = addon && addon.expiresAt && addon.expiresAt.toMillis ? addon.expiresAt.toMillis() : null;
+  const addonExpired = addonExpiryMs !== null && addonExpiryMs < Date.now();
+  const addonActive = !!(addon && addon.active) && !addonExpired;
+
+  body.innerHTML = `
+    <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-4 mb-3 text-left">
+      <div class="flex items-center justify-between mb-1">
+        <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-key text-brand mr-1"></i> নিজের API Key (BYOK) — Lifetime</h5>
+        ${byokOn
+          ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">সক্রিয়</span>`
+          : `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">নিষ্ক্রিয়</span>`}
+      </div>
+      <p class="text-[11px] text-slate-400 mb-3">একবার সক্রিয় করলে সাবস্ক্রিপশন রিনিউ/মেয়াদ-নির্বিশেষে আজীবন থাকবে — সেটাপ-চার্জ ভিত্তিক এককালীন আনলক। (ব্যবহারের জন্য তখনও সক্রিয় সাবস্ক্রিপশন লাগবে — এটা শুধু BYOK-এর অনুমতি, সাবস্ক্রিপশনের বিকল্প না।)</p>
+      ${byokOn && access.byokEnabledAt ? `<p class="text-[11px] text-slate-400 mb-2">সক্রিয় হয়েছে: ${esc(formatAiTimestamp(access.byokEnabledAt))}${access.byokEnabledBy ? ' — ' + esc(access.byokEnabledBy) : ''}</p>` : ''}
+      <button id="ai-byok-toggle-btn" onclick="toggleByokAccess('${uid}', ${!byokOn})" class="btn btn-sm ${byokOn ? 'btn-danger-outline' : 'btn-success'} btn-block">
+        ${byokOn ? 'নিষ্ক্রিয় করুন' : 'সক্রিয় করুন (Lifetime Unlock)'}
+      </button>
+    </div>
+
+    <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-4 text-left">
+      <div class="flex items-center justify-between mb-1">
+        <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-crown text-brand mr-1"></i> শেয়ার্ড AI (প্ল্যাটফর্ম প্রিমিয়াম)</h5>
+        ${addonActive
+          ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">সক্রিয়</span>`
+          : addonExpired ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">মেয়াদ শেষ</span>`
+          : `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">নিষ্ক্রিয়</span>`}
+      </div>
+      <p class="text-[11px] text-slate-400 mb-3">নিজের key ছাড়াই প্ল্যাটফর্মের শেয়ার্ড key ব্যবহার — subscription-এর মতোই মেয়াদভিত্তিক, দৈনিক ব্যবহার-সীমা সহ।</p>
+      ${addonExpiryMs ? `<p class="text-[11px] text-slate-400 mb-2">${addonExpired ? 'মেয়াদ ফুরিয়েছিল' : 'বর্তমান মেয়াদ'}: ${esc(formatAiTimestamp(addon.expiresAt))} পর্যন্ত</p>` : ''}
+      ${addon ? `<p class="text-[11px] text-slate-400 mb-2">আজকের ব্যবহার: ${addon.dailyUsageCount || 0} / ${addon.dailyCap || 20}</p>` : ''}
+
+      <div class="grid grid-cols-2 gap-2 mb-2">
+        <div>
+          <label class="block text-[10px] text-slate-400 mb-1">মেয়াদ বাড়ান</label>
+          <select id="ai-addon-duration" class="w-full text-xs border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+            ${AI_ADDON_DURATIONS.map(d => `<option value="${d.days}">${d.label}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-400 mb-1">দৈনিক সীমা</label>
+          <input type="number" id="ai-addon-cap" value="${addon?.dailyCap || 20}" min="1" class="w-full text-xs border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"/>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="grantOrExtendAiAddon('${uid}')" class="btn btn-primary btn-sm flex-1">${addonActive ? 'মেয়াদ বাড়ান' : 'সক্রিয় করুন'}</button>
+        ${addon && addon.active ? `<button onclick="revokeAiAddon('${uid}')" class="btn btn-danger-outline btn-sm">বন্ধ করুন</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function toggleByokAccess(uid, enable) {
+  const confirmMsg = enable
+    ? 'এই ইউজারের জন্য BYOK (নিজের API key) ফিচার আজীবনের জন্য আনলক করবেন? এটা সেটাপ-চার্জ গ্রহণের পরই করা উচিত।'
+    : 'BYOK অ্যাক্সেস বন্ধ করবেন? ইউজার আর নিজের key দিয়ে AI ব্যবহার করতে পারবেন না (আগে সেভ করা key Firestore-এ থেকে যাবে, কিন্তু ব্যবহার ব্লকড হবে)।';
+  if (!confirm(confirmMsg)) return;
+
+  const btn = document.getElementById('ai-byok-toggle-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const data = { byokEnabled: enable };
+    if (enable) {
+      data.byokEnabledAt = firebase.firestore.FieldValue.serverTimestamp();
+      data.byokEnabledBy = APP_STATE.currentUser.email;
+    }
+    await fbDb.collection('users').doc(uid).collection('config').doc('aiAccess').set(data, { merge: true });
+    toast(enable ? 'BYOK আনলক করা হয়েছে।' : 'BYOK বন্ধ করা হয়েছে।', 's');
+    await loadAndRenderAiAccessModal(uid);
+  } catch (err) {
+    toast('ব্যর্থ: ' + err.message, 'e');
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function grantOrExtendAiAddon(uid) {
+  const days = parseInt(document.getElementById('ai-addon-duration').value, 10) || 30;
+  const dailyCap = parseInt(document.getElementById('ai-addon-cap').value, 10) || 20;
+  try {
+    const addonDoc = await fbDb.collection('users').doc(uid).collection('config').doc('aiPremiumAddon').get();
+    const existing = addonDoc.exists ? addonDoc.data() : null;
+    // ✅ admin.js-এর extendSubscription()-এর একই প্যাটার্ন — মেয়াদ চলমান থাকলে
+    // তার পর থেকে, ফুরিয়ে থাকলে আজ থেকে যোগ হবে
+    const currentExpiryMs = existing && existing.expiresAt && existing.expiresAt.toMillis
+      ? Math.max(existing.expiresAt.toMillis(), Date.now())
+      : Date.now();
+    const newExpiry = firebase.firestore.Timestamp.fromMillis(currentExpiryMs + days * 86400000);
+
+    await fbDb.collection('users').doc(uid).collection('config').doc('aiPremiumAddon').set({
+      active: true, expiresAt: newExpiry, dailyCap,
+    }, { merge: true });
+
+    toast(`শেয়ার্ড AI ${days} দিনের জন্য সক্রিয়/বর্ধিত করা হয়েছে।`, 's');
+    await loadAndRenderAiAccessModal(uid);
+  } catch (err) { toast('ব্যর্থ: ' + err.message, 'e'); }
+}
+
+async function revokeAiAddon(uid) {
+  if (!confirm('শেয়ার্ড AI অ্যাডঅন বন্ধ করবেন?')) return;
+  try {
+    await fbDb.collection('users').doc(uid).collection('config').doc('aiPremiumAddon').set({ active: false }, { merge: true });
+    toast('শেয়ার্ড AI বন্ধ করা হয়েছে।', 's');
+    await loadAndRenderAiAccessModal(uid);
+  } catch (err) { toast('ব্যর্থ: ' + err.message, 'e'); }
 }
