@@ -1388,6 +1388,8 @@ async function apiGetCompleteData() {
       onboardingComplete: settings.onboardingComplete || false, // ✅ নতুন — প্রথমবার-সেটআপ ফর্ম ট্র্যাকিং
       reviewPromptDismissed: settings.reviewPromptDismissed || false, // ✅ আইটেম ১১
       lastExportAt: settings.lastExportAt || null, // ✅ ধাপ ০.৩ — ব্যাকআপ রিমাইন্ডার
+      pinLockEnabled: settings.pinLockEnabled || false, // ✅ আইটেম ২৩
+      pinHash: settings.pinHash || '',
       historyCutoff: cutoff,
       capReached,
     };
