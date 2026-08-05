@@ -1494,6 +1494,21 @@ async function apiSearchGlobalMedicines(prefix) {
 async function apiImportGlobalMedicine(med) {
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
+    // ✅ ধাপ ০.২ (মূল root cause): এতদিন এখানে কোনো dedup-check ছিলই না —
+    // একই Global Master আইটেম দুই/তিনবার "যোগ করুন" চাপলে প্রতিবার নতুন
+    // Date.now()-ভিত্তিক ID দিয়ে সম্পূর্ণ আলাদা medicine+inventory ডকুমেন্ট
+    // তৈরি হয়ে যেত। findDuplicateMedicine() reuse — brand+doseForm+strength
+    // মিলে গেলে hard-block, কারণ Global Master-এর একই সোর্স-আইটেম দুইবার
+    // ইমপোর্ট করার কোনো বৈধ কারণ নেই (ম্যানুয়াল এন্ট্রির মতো "সত্যিই ভিন্ন
+    // হতে পারে" এমন অস্পষ্টতা এখানে নেই)।
+    const dup = findDuplicateMedicine(med.brand, med.doseForm || '', med.strength || '', null);
+    if (dup) {
+      return {
+        success: false,
+        message: `"${med.brand} ${med.doseForm || ''} ${med.strength || ''}" ইতিমধ্যে আপনার ওষুধ মাস্টারে আছে (${dup.id}) — আবার ইমপোর্ট করার দরকার নেই।`,
+      };
+    }
+
     const id = 'MED-' + med.brand.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 8) + '-' + Date.now();
     const data = { id, brand: med.brand, generic: med.generic || '', doseForm: med.doseForm || '', strength: med.strength || '', manufacturer: med.manufacturer || '', category: med.category || '', unit: med.unit || 'পাতা', reorderLevel: 10 };
     await userCol('medicines').doc(id).set(data);
