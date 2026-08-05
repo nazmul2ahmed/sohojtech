@@ -16,11 +16,16 @@ function isEnglishBrand(str) {
 
 function findDuplicateMedicine(brand, doseForm, strength, excludeId) {
   const key = (s) => String(s || '').trim().toLowerCase();
+  // ✅ ধাপ ০.২ (সেকেন্ডারি): strength তুলনায় ভেতরের স্পেস উপেক্ষা করা হচ্ছে —
+  // "500mg" বনাম "500 mg" আসলে একই strength, টাইপো-ভিন্নতা মাত্র। brand+doseForm
+  // একই থাকা অবস্থায় strength-এ শুধু স্পেস-ভিন্নতা কখনো বৈধভাবে "ভিন্ন ওষুধ"
+  // বোঝায় না, তাই এখানে hard-block-ই যুক্তিসঙ্গত (soft-warning না)।
+  const strengthKey = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
   return APP_STATE.medicines.find(m =>
     m.id !== excludeId &&
     key(m.brand) === key(brand) &&
     key(m.doseForm) === key(doseForm) &&
-    key(m.strength) === key(strength)
+    strengthKey(m.strength) === strengthKey(strength)
   );
 }
 
