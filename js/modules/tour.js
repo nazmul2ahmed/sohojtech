@@ -40,6 +40,9 @@ let _tourKeyHandler = null;
 // ✅ renderSidebarNav()-এর visibility শর্তের সাথে হুবহু সামঞ্জস্যপূর্ণ —
 // আলাদাভাবে মেইনটেইন করলে দুটো জায়গা ড্রিফট করে যাওয়ার ঝুঁকি থাকত।
 function getVisibleTourSteps() {
+  // ✅ app.js-এর renderSidebarNav()-এর OWNER_ONLY_TABS-এর সাথে সিঙ্ক —
+  // dashboard/analytics/accounts staff-এর সাইডবারেই নেই, তাই ট্যুরেও দেখানো উচিত না
+  const OWNER_ONLY_TOUR_TABS = ['dashboard', 'analytics', 'accounts'];
   const sections = NAV_CONFIG.filter(s =>
     (s.section !== 'প্রশাসন' || APP_STATE.isAdmin) &&
     (s.section !== 'B2B' || APP_STATE.ads.enabled) &&
@@ -47,6 +50,7 @@ function getVisibleTourSteps() {
   );
   return sections.flatMap(s => s.items)
     .filter(item => TOUR_CONTENT[item.id])
+    .filter(item => !(APP_STATE.isStaffMember && OWNER_ONLY_TOUR_TABS.includes(item.id)))
     .map(item => ({ tabId: item.id, ...TOUR_CONTENT[item.id] }));
 }
 
