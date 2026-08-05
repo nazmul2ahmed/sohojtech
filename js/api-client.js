@@ -1387,6 +1387,7 @@ async function apiGetCompleteData() {
       logoBase64: settings.logoBase64 || '', // ✅ নতুন — আইটেম ১২
       onboardingComplete: settings.onboardingComplete || false, // ✅ নতুন — প্রথমবার-সেটআপ ফর্ম ট্র্যাকিং
       reviewPromptDismissed: settings.reviewPromptDismissed || false, // ✅ আইটেম ১১
+      lastExportAt: settings.lastExportAt || null, // ✅ ধাপ ০.৩ — ব্যাকআপ রিমাইন্ডার
       historyCutoff: cutoff,
       capReached,
     };
