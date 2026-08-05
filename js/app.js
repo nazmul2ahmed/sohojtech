@@ -201,7 +201,8 @@ function renderShell() {
   // উপরের guard-গুলো dashboard-এ পাঠালেও এই guard সেটাও ধরে POS-এ পাঠাবে।
   if (
     (APP_STATE.currentTab === 'dashboard' ||
-     APP_STATE.currentTab === 'analytics') &&
+     APP_STATE.currentTab === 'analytics' ||
+     APP_STATE.currentTab === 'accounts') &&
     APP_STATE.isStaffMember
   ) {
     APP_STATE.currentTab = 'pos';
