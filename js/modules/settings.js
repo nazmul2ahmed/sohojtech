@@ -68,6 +68,15 @@ function renderSettingsModule() {
           </div>
         </div>` : ''}
 
+        ${!APP_STATE.isStaffMember ? `
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-shield-halved text-slate-400"></i> PIN লক</h5>
+          <p class="text-[11px] text-slate-400 mb-3">শেয়ার্ড/কাউন্টার ডিভাইসে ৫ মিনিট নিষ্ক্রিয় থাকলে বা অ্যাপ নতুন করে খুললে PIN চাইবে।</p>
+          <div id="settings-pinlock-status" class="text-xs text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-slate-300 animate-pulse inline-block"></span> লোড হচ্ছে...
+          </div>
+        </div>` : ''}
+
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-sack-dollar text-brand"></i> নগদ ব্যালান্স</h5>
           <p class="text-[11px] text-slate-400 mb-3">ধাপ ৩২ থেকে প্রতিটা নগদ-প্রভাবিত লেনদেন স্বয়ংক্রিয়ভাবে ট্র্যাক হয়। প্রথমবার ব্যবহারের আগে নিচে আপনার হাতে/ব্যাংকে থাকা প্রকৃত নগদ পরিমাণ (physical count) বসিয়ে শুরুর পয়েন্ট সেট করুন।</p>
@@ -108,6 +117,8 @@ function renderSettingsModule() {
             <div>সংস্করণ: <span class="font-mono">${esc(APP_CONFIG.version)}</span></div>
             <div>অফলাইন সিঙ্ক: <span class="font-semibold ${APP_CONFIG.features.offlineSync ? 'text-emerald-600' : 'text-slate-400'}">${APP_CONFIG.features.offlineSync ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></div>
             <div>রিড-ওনলি গার্ড: <span class="font-semibold text-emerald-600">সক্রিয়</span></div>
+            <div>🔒 ডেটা সংরক্ষণ: <span class="font-semibold text-emerald-600">Google Firebase (এনক্রিপ্টেড)</span></div>
+          </div>
           </div>
           <div class="flex gap-3 mt-3 pt-3 border-t border-brand/10">
             <a href="privacy.html" target="_blank" class="text-[11px] text-brand hover:underline">গোপনীয়তা নীতি</a>
@@ -125,6 +136,89 @@ function renderSettingsModule() {
   refreshSettingsSyncStatusCard();
   refreshCashBalanceCard();
   if (!APP_STATE.isStaffMember) refreshEmailPrefCard();
+  if (!APP_STATE.isStaffMember) refreshPinLockCard();
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ আইটেম ২৩: PIN-LOCK CARD
+// ────────────────────────────────────────────────────────────
+function refreshPinLockCard() {
+  const box = document.getElementById('settings-pinlock-status');
+  if (!box) return;
+  const enabled = !!APP_STATE.pinLockEnabled;
+  box.innerHTML = `
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <span class="text-xs font-semibold ${enabled ? 'text-emerald-600' : 'text-slate-400'}">${enabled ? '🔒 সক্রিয়' : '🔓 নিষ্ক্রিয়'}</span>
+      <div class="flex gap-2">
+        ${enabled
+          ? `<button onclick="openPinSetModal(true)" class="btn btn-brand-outline btn-sm">PIN পরিবর্তন</button>
+             <button onclick="disablePinLock()" class="btn btn-danger-outline btn-sm">বন্ধ করুন</button>`
+          : `<button onclick="openPinSetModal(false)" class="btn btn-primary btn-sm">চালু করুন</button>`}
+      </div>
+    </div>`;
+}
+
+function openPinSetModal(isChange) {
+  if (guardReadOnly()) return;
+  document.getElementById('pinset-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'pinset-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-xs w-full">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-1">${isChange ? 'নতুন PIN সেট করুন' : 'PIN লক চালু করুন'}</h4>
+      <p class="text-xs text-slate-400 mb-4">৪ ডিজিটের সংখ্যা — মনে রাখা সহজ কিন্তু অনুমান করা কঠিন এমন কিছু দিন।</p>
+      <div id="pinset-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
+      <input type="password" id="pinset-new" inputmode="numeric" maxlength="4" placeholder="নতুন PIN"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"
+        class="w-full text-center text-xl tracking-[0.4em] px-3 py-2 mb-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+      <input type="password" id="pinset-confirm" inputmode="numeric" maxlength="4" placeholder="আবার লিখুন"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"
+        class="w-full text-center text-xl tracking-[0.4em] px-3 py-2 mb-4 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+      <div class="flex gap-2">
+        <button id="pinset-save-btn" onclick="savePinSet()" class="btn btn-primary flex-1">সংরক্ষণ করুন</button>
+        <button onclick="document.getElementById('pinset-modal').remove()" class="btn btn-secondary">বাতিল</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  openAppModal('pinset-modal', () => document.getElementById('pinset-modal')?.remove());
+  document.getElementById('pinset-new').focus();
+}
+
+async function savePinSet() {
+  const errEl = document.getElementById('pinset-error');
+  errEl.classList.add('hidden');
+  const pin1 = document.getElementById('pinset-new').value.trim();
+  const pin2 = document.getElementById('pinset-confirm').value.trim();
+  if (!/^\d{4}$/.test(pin1)) { errEl.textContent = 'ঠিক ৪ ডিজিটের সংখ্যা দিন।'; errEl.classList.remove('hidden'); return; }
+  if (pin1 !== pin2) { errEl.textContent = 'দুটো PIN মিলছে না।'; errEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('pinset-save-btn');
+  btn.disabled = true; btn.textContent = 'সংরক্ষণ হচ্ছে...';
+  try {
+    const hashHex = await hashPin(pin1);
+    const res = await apiSaveSettings({ pinLockEnabled: true, pinHash: hashHex });
+    if (!res.success) { errEl.textContent = res.message; errEl.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
+    applyPinLockStateChange(true, hashHex);
+    toast('PIN লক চালু/আপডেট হয়েছে।', 's');
+    document.getElementById('pinset-modal')?.remove();
+    refreshPinLockCard();
+  } catch (err) {
+    showFatalError('PIN সংরক্ষণে সমস্যা:\n' + humanizeError(err), err);
+    btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন';
+  }
+}
+
+async function disablePinLock() {
+  if (guardReadOnly()) return;
+  if (!confirm('PIN লক বন্ধ করবেন? এই ডিভাইসে আর PIN চাইবে না।')) return;
+  try {
+    const res = await apiSaveSettings({ pinLockEnabled: false });
+    if (!res.success) return toast(res.message, 'w');
+    applyPinLockStateChange(false);
+    toast('PIN লক বন্ধ করা হয়েছে।', 's');
+    refreshPinLockCard();
+  } catch (err) { showFatalError('PIN লক বন্ধ করতে সমস্যা:\n' + humanizeError(err), err); }
 }
 
 // ────────────────────────────────────────────────────────────
