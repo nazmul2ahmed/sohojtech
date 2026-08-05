@@ -143,27 +143,21 @@ function closeAppModal() {
 // ════════════════════════════════════════════════════════════
 // SHELL RENDERING
 // ════════════════════════════════════════════════════════════
-function renderShell() {
-  renderSidebarNav();
-  renderTabPanels();
-  wireShellEvents();
-  updateDarkToggleIcon();
-  if (APP_STATE.currentTab === 'admin' && !APP_STATE.isAdmin) APP_STATE.currentTab = 'dashboard';
-  if (APP_STATE.currentTab === 'ads' && !APP_STATE.ads.enabled) APP_STATE.currentTab = 'dashboard';
-  if (APP_STATE.currentTab === 'staff' && APP_STATE.isStaffMember) APP_STATE.currentTab = 'dashboard';
-  if (APP_STATE.currentTab === 'aiSettings' && APP_STATE.isStaffMember) APP_STATE.currentTab = 'dashboard';
-  goTab(APP_STATE.currentTab);
-  setText('sidebar-pharma-name', APP_STATE.pharmacyName);
-}
-
 function renderSidebarNav() {
   const nav = document.getElementById('sidebar-nav');
+  // ✅ নতুন — এই ট্যাবগুলো শুধু owner দেখতে পারবে, staff (manager/cashier) কেউই না
+  const OWNER_ONLY_TABS = ['dashboard', 'analytics'];
+
   const sections = NAV_CONFIG.filter(s =>
-  (s.section !== 'প্রশাসন' || APP_STATE.isAdmin) &&
-  (s.section !== 'B2B' || APP_STATE.ads.enabled) &&
-  (s.section !== 'টিম' || !APP_STATE.isStaffMember) &&   // ✅ স্টাফ নিজে এই ট্যাব দেখবে না
-  (s.section !== 'AI ফিচার' || !APP_STATE.isStaffMember) // ✅ নতুন — AI কনফিগারেশন শুধু owner-এর
-);
+    (s.section !== 'প্রশাসন' || APP_STATE.isAdmin) &&
+    (s.section !== 'B2B' || APP_STATE.ads.enabled) &&
+    (s.section !== 'টিম' || !APP_STATE.isStaffMember) &&
+    (s.section !== 'AI ফিচার' || !APP_STATE.isStaffMember)
+  ).map(s => ({
+    ...s,
+    items: s.items.filter(item => !(APP_STATE.isStaffMember && OWNER_ONLY_TABS.includes(item.id))),
+  })).filter(s => s.items.length);
+
   nav.innerHTML = sections.map(section => `
     <div>
       <div class="px-3 mb-1 text-[11px] font-semibold tracking-wider uppercase text-white/30">${esc(section.section)}</div>
@@ -179,6 +173,42 @@ function renderSidebarNav() {
           </li>`).join('')}
       </ul>
     </div>`).join('');
+}
+
+function renderShell() {
+  renderSidebarNav();
+  renderTabPanels();
+  wireShellEvents();
+  updateDarkToggleIcon();
+
+  if (APP_STATE.currentTab === 'admin' && !APP_STATE.isAdmin) {
+    APP_STATE.currentTab = 'dashboard';
+  }
+
+  if (APP_STATE.currentTab === 'ads' && !APP_STATE.ads.enabled) {
+    APP_STATE.currentTab = 'dashboard';
+  }
+
+  if (APP_STATE.currentTab === 'staff' && APP_STATE.isStaffMember) {
+    APP_STATE.currentTab = 'dashboard';
+  }
+
+  if (APP_STATE.currentTab === 'aiSettings' && APP_STATE.isStaffMember) {
+    APP_STATE.currentTab = 'dashboard';
+  }
+
+  // ✅ নতুন — staff dashboard/analytics-এ ঢুকলে POS-এ redirect
+  // উপরের guard-গুলো dashboard-এ পাঠালেও এই guard সেটাও ধরে POS-এ পাঠাবে।
+  if (
+    (APP_STATE.currentTab === 'dashboard' ||
+     APP_STATE.currentTab === 'analytics') &&
+    APP_STATE.isStaffMember
+  ) {
+    APP_STATE.currentTab = 'pos';
+  }
+
+  goTab(APP_STATE.currentTab);
+  setText('sidebar-pharma-name', APP_STATE.pharmacyName);
 }
 
 // Dashboard-এর জন্য বিশেষ container দেই (dashboard.js নিজে রেন্ডার করবে);
