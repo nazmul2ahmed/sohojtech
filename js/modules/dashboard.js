@@ -190,6 +190,34 @@ function renderSmartSuggestionsCard(suggestions) {
     </div>`;
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ০.৩ — ডেটা ব্যাকআপ রিমাইন্ডার। Dashboard নিজেই owner-only
+// (staff redirect হয়ে POS-এ চলে যায়), তাই এখানে আলাদা role-চেক লাগে না।
+// বেসলাইন: APP_STATE.lastExportAt — কখনো এক্সপোর্ট না করা থাকলে
+// অ্যাকাউন্ট তৈরির তারিখ (profile.createdAt) থেকে গণনা, যাতে নতুন
+// ইউজার প্রথম দিনেই বিরক্তিকর রিমাইন্ডার না দেখে।
+// ════════════════════════════════════════════════════════════
+function daysSinceExcelExport() {
+  const ts = APP_STATE.lastExportAt || APP_STATE.currentUser?.createdAt;
+  if (!ts) return null;
+  const date = ts.toDate ? ts.toDate() : new Date(ts);
+  if (isNaN(date.getTime())) return null;
+  // ✅ ফিক্স: serverTimestamp round-trip বা ঘড়ি-skew-এর কারণে সাময়িকভাবে
+  // negative হয়ে যেতে পারে ("−১ দিন পার হয়ে গেছে" দেখানো এড়াতে) — 0-এ ক্ল্যাম্প
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
+}
+
+function renderBackupReminderBanner() {
+  const days = daysSinceExcelExport();
+  if (days === null || days < 30) return '';
+  const neverExported = !APP_STATE.lastExportAt;
+  return `
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-sm rounded-xl px-4 py-3 mb-5 flex items-center justify-between gap-3 flex-wrap">
+      <span><i class="fa-solid fa-cloud-arrow-down mr-1.5"></i> ${neverExported ? 'আপনি এখনো একবারও Excel ব্যাকআপ নেননি' : `শেষ Excel ব্যাকআপ নেওয়ার পর ${days} দিন পার হয়ে গেছে`} — ডেটা-হারানোর ঝুঁকি এড়াতে নিয়মিত ব্যাকআপ রাখুন।</span>
+      <button onclick="goTab('settings')" class="text-xs font-semibold underline whitespace-nowrap flex-shrink-0">এখনই এক্সপোর্ট করুন</button>
+    </div>`;
+}
+
 function renderDashboardModule() {
   const container = document.getElementById('dashboard-content');
   if (!container) return;
@@ -199,6 +227,7 @@ function renderDashboardModule() {
   const suggestions = computeSmartSuggestions(APP_STATE);
 
   container.innerHTML = `
+  ${renderBackupReminderBanner()}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
       ${kpiCard('আজকের বিক্রয় (নিট)', '৳' + fmtK(m.netRevenue), m.invoiceCount + ' টি ইনভয়েস', 'fa-sack-dollar', 'blue')}
       ${kpiCard('নিট মুনাফা (Net Profit)', (m.netProfit >= 0 ? '৳' : '−৳') + fmtK(Math.abs(m.netProfit)), 'Revenue − COGS − Expense − Write-off', 'fa-chart-line', m.netProfit >= 0 ? 'green' : 'red')}
