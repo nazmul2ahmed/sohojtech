@@ -91,6 +91,7 @@ function renderSettingsModule() {
             <i class="fa-solid fa-download mr-1"></i> Excel-এ ডাউনলোড করুন
           </button>
           <p class="text-[11px] text-slate-400">সব ডেটা একটা .xlsx ফাইলে (প্রতিটা টেবিল আলাদা শিটে)।</p>
+          <span id="settings-export-note">${renderLastExportNote()}</span>
         </div>
 
         <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-5">
@@ -396,6 +397,29 @@ async function removeLogo() {
   }
 }
 
+// ✅ ধাপ ০.৩: এক্সপোর্ট-সফল হওয়ার পর Firestore-এ টাইমস্ট্যাম্প — fire-and-forget,
+// ব্যর্থ হলেও এক্সপোর্ট নিজে (ইতিমধ্যে সফল) আটকাবে না, শুধু রিমাইন্ডার সামান্য stale থাকবে
+async function recordExcelExportTimestamp() {
+  APP_STATE.lastExportAt = new Date(); // ✅ optimistic — Settings/Dashboard-এ সাথে সাথে রিফ্লেক্ট
+  try {
+    await apiSaveSettings({ lastExportAt: firebase.firestore.FieldValue.serverTimestamp() });
+  } catch (err) {
+    console.warn('ব্যাকআপ-টাইমস্ট্যাম্প সংরক্ষণ ব্যর্থ (এক্সপোর্ট নিজে সফল হয়েছে):', err);
+  }
+}
+
+// ✅ ধাপ ০.৩: Settings-এর "ডেটা এক্সপোর্ট" কার্ডে ছোট informational note
+function renderLastExportNote() {
+  if (!APP_STATE.lastExportAt) {
+    return `<p class="text-[11px] text-amber-600 mt-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>এখনো কোনো ব্যাকআপ নেওয়া হয়নি।</p>`;
+  }
+  const ts = APP_STATE.lastExportAt;
+  const date = ts.toDate ? ts.toDate() : new Date(ts);
+  const days = Math.floor((Date.now() - date.getTime()) / 86400000);
+  const colorClass = days >= 30 ? 'text-amber-600' : 'text-slate-400';
+  return `<p class="text-[11px] ${colorClass} mt-2">সর্বশেষ ব্যাকআপ: ${days <= 0 ? 'আজ' : days + ' দিন আগে'}</p>`;
+}
+
 function exportToExcel() {
   const wb = XLSX.utils.book_new();
   const sheets = {
@@ -417,6 +441,9 @@ function exportToExcel() {
   });
   XLSX.writeFile(wb, `${APP_STATE.pharmacyName || 'pharmacy'}_${todayStr()}.xlsx`);
   toast('Excel ফাইল ডাউনলোড হয়েছে।', 's');
+  recordExcelExportTimestamp(); // ✅ ধাপ ০.৩
+  const note = document.getElementById('settings-export-note');
+  if (note) note.outerHTML = renderLastExportNote().replace('<p ', '<p id="settings-export-note" ');
 }
 
 function openResetConfirm() {
