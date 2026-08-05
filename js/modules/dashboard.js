@@ -207,6 +207,7 @@ function renderDashboardModule() {
     </div>
 
     ${renderSmartSuggestionsCard(suggestions)}
+    ${renderAiInsightCardShell()}
 
     <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-5">
       <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1 flex items-center gap-2">
@@ -347,6 +348,7 @@ function renderDashboardModule() {
   `;
 
   refreshBalanceSheetCard(); // ✅ ধাপ ৩২.৫ — progressive load, DOM বসে যাওয়ার পর কল
+  initAiInsightCard();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -447,4 +449,146 @@ function goToReportPeriod(type) {
   goTab('analytics'); // renderAnalyticsModule() এই prefilled তারিখ দিয়েই রেন্ডার করবে
   // ব্যাকগ্রাউন্ডে auto-fetch — cap/cutoff-এর বাইরে পড়লে চুপচাপ ডেটা এনে merge করবে
   ensurePeriodDataLoaded(range.fromDate, range.toDate);
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ AI DASHBOARD INSIGHT — Tier ১ (Step ১)
+// rule-based computeSmartSuggestions()-এর সম্পূরক (প্রতিস্থাপন না)।
+// বিদ্যমান aggregate সংখ্যা (নাম/PII ছাড়া) AI-কে পাঠিয়ে prioritized
+// বাংলা bulletin বানায়। ম্যানুয়াল বাটন-ট্রিগার, Firestore cache
+// (users/{uid}/config/aiDashboardCache) — রিলোডে আবার call হয় না।
+// ════════════════════════════════════════════════════════════
+
+let _aiInsightAvailability = null;
+
+function buildAiInsightSummaryPayload(state) {
+  const m = computeDashboardMetrics(state);
+  const thisMonth = getMonthRangeOffset(0);
+  const lastMonth = getMonthRangeOffset(-1);
+  return {
+    outOfStockCount: m.outStock.length,
+    lowStockCount: m.lowStock.length,
+    expiringSoonCount: m.expiryAlerts.filter(x => x.daysLeft <= 30).length,
+    totalCustomerDue: m.totalCustDue,
+    dueCustomerCount: m.dueCustomers.length,
+    todayNetProfit: m.netProfit,
+    todayRevenue: m.netRevenue,
+    todayInvoiceCount: m.invoiceCount,
+    thisMonthProfit: computeMonthlyGrossProfit(thisMonth.fromDate, thisMonth.toDate),
+    lastMonthProfit: computeMonthlyGrossProfit(lastMonth.fromDate, lastMonth.toDate),
+  };
+}
+
+async function checkAiInsightAvailability() {
+  try {
+    const doc = await userCol('config').doc('aiSettings').get();
+    const settings = doc.exists ? doc.data() : null;
+    const hasRouting = !!(settings && settings.taskRouting && (settings.taskRouting.dashboardInsight || []).length);
+    let allowedForMe = true;
+    if (APP_STATE.isStaffMember) {
+      allowedForMe = APP_STATE.staffRole === 'manager' && settings && settings.staffAccess === 'enabled';
+    }
+    _aiInsightAvailability = { configured: hasRouting, allowedForMe };
+  } catch (err) {
+    _aiInsightAvailability = { configured: false, allowedForMe: !APP_STATE.isStaffMember };
+  }
+  return _aiInsightAvailability;
+}
+
+async function loadAiInsightCache() {
+  try {
+    const doc = await userCol('config').doc('aiDashboardCache').get();
+    return doc.exists ? doc.data() : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+async function saveAiInsightCache(text) {
+  try {
+    await userCol('config').doc('aiDashboardCache').set({
+      text, generatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('AI insight cache সংরক্ষণ ব্যর্থ:', err.message);
+  }
+}
+
+function renderAiInsightCardShell() {
+  return `
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-5" id="ai-insight-card">
+      <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-wand-magic-sparkles text-brand"></i> AI ইনসাইট
+      </h5>
+      <div id="ai-insight-body" class="text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> লোড হচ্ছে...</div>
+    </div>`;
+}
+
+async function initAiInsightCard() {
+  const box = document.getElementById('ai-insight-body');
+  if (!box) return;
+  const avail = await checkAiInsightAvailability();
+  if (!document.getElementById('ai-insight-body')) return;
+
+  if (!avail.allowedForMe) {
+    document.getElementById('ai-insight-card')?.remove();
+    return;
+  }
+  if (!avail.configured) {
+    box.innerHTML = `
+      <p class="text-xs text-slate-400 mb-2">এখনো কোনো AI provider কনফিগার করা নেই।</p>
+      ${!APP_STATE.isStaffMember
+        ? `<button onclick="goTab('aiSettings')" class="btn btn-brand-outline btn-sm">AI সেটিংসে যান</button>`
+        : `<p class="text-[11px] text-slate-400">মালিকের সাথে যোগাযোগ করুন।</p>`}
+    `;
+    return;
+  }
+  const cache = await loadAiInsightCache();
+  if (!document.getElementById('ai-insight-body')) return;
+  renderAiInsightBody(cache);
+}
+
+function renderAiInsightBody(cache) {
+  const box = document.getElementById('ai-insight-body');
+  if (!box) return;
+  if (!cache || !cache.text) {
+    box.innerHTML = `
+      <p class="text-xs text-slate-400 mb-3">AI দিয়ে আজকের ব্যবসার একটা দ্রুত সারাংশ তৈরি করুন।</p>
+      <button id="ai-insight-gen-btn" onclick="generateAiInsight()" class="btn btn-primary btn-sm">
+        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> AI ইনসাইট দেখুন
+      </button>`;
+    return;
+  }
+  const genDate = cache.generatedAt?.toDate ? cache.generatedAt.toDate() : new Date();
+  const timeStr = genDate.toLocaleString('bn-BD', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+  box.innerHTML = `
+    <div class="text-sm text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-line mb-3">${esc(cache.text)}</div>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <span class="text-[11px] text-slate-400">শেষ আপডেট: ${esc(timeStr)}</span>
+      <button id="ai-insight-gen-btn" onclick="generateAiInsight()" class="text-xs text-brand hover:underline">
+        <i class="fa-solid fa-rotate-right mr-1"></i> নতুন করে জেনারেট করুন
+      </button>
+    </div>`;
+}
+
+async function generateAiInsight() {
+  const btn = document.getElementById('ai-insight-gen-btn');
+  const box = document.getElementById('ai-insight-body');
+  if (!box) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> তৈরি হচ্ছে...'; }
+  else box.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> তৈরি হচ্ছে...`;
+
+  try {
+    const summary = buildAiInsightSummaryPayload(APP_STATE);
+    const res = await callAiTask('dashboardInsight', { summary });
+    const tips = (res.data && res.data.tips) || [];
+    if (!tips.length) throw new Error('AI কোনো পরামর্শ দিতে পারেনি।');
+    const text = tips.map(t => '• ' + t).join('\n');
+    await saveAiInsightCache(text);
+    renderAiInsightBody({ text, generatedAt: { toDate: () => new Date() } });
+  } catch (err) {
+    box.innerHTML = `
+      <p class="text-xs text-red-500 mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>${esc(humanizeError(err))}</p>
+      <button onclick="generateAiInsight()" class="btn btn-secondary btn-sm">আবার চেষ্টা করুন</button>`;
+  }
 }
