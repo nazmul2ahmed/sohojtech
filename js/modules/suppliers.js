@@ -103,6 +103,7 @@ function renderSupTable() {
           <td class="px-4 py-3 hidden lg:table-cell text-right font-mono text-xs text-slate-500">৳${fmt(s.totalPaid || 0)}</td>
           <td class="px-4 py-3 text-center whitespace-nowrap">
             ${s.totalPayable > 0 ? `<button onclick="openPayPayable('${s.id}')" class="text-emerald-600 hover:underline text-xs mr-3"><i class="fa-solid fa-money-bill-transfer mr-1"></i>পরিশোধ</button>` : ''}
+            <button onclick="openSupplierHistory('${s.id}')" class="text-slate-500 hover:underline text-xs mr-3"><i class="fa-solid fa-clock-rotate-left mr-1"></i>ইতিহাস</button>
             <button onclick="openSupplierForm('${s.id}')" class="text-brand hover:underline text-xs mr-3"><i class="fa-solid fa-pen mr-1"></i>এডিট</button>
             <button onclick="deleteSupplierConfirm('${s.id}')" class="text-red-500 hover:underline text-xs"><i class="fa-solid fa-trash mr-1"></i>মুছুন</button>
           </td>
