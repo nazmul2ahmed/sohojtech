@@ -63,6 +63,7 @@ async function initApp() {
   const onboardingShown = typeof maybeShowOnboardingModal === 'function' && maybeShowOnboardingModal();
   if (!onboardingShown && typeof maybeShowChangelogModal === 'function') maybeShowChangelogModal();
   if (typeof maybeScheduleReviewPrompt === 'function') maybeScheduleReviewPrompt(); // ✅ আইটেম ১১
+  if (typeof initPinLock === 'function') initPinLock(); // ✅ আইটেম ২৩
 }
 
 // ════════════════════════════════════════════════════════════
