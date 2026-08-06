@@ -312,4 +312,144 @@ async function savePayPayable(supId) {
     btn.disabled = false;
     btn.textContent = 'পরিশোধ করুন';
   }
+} 
+
+// ════════════════════════════════════════════════════════════
+// ✅ টায়ার ২: SUPPLIER-WISE HISTORY VIEW
+// customers.js-এর openCustomerHistory()-এর সমান্তরাল প্যাটার্ন —
+// বিদ্যমান APP_STATE (purchases/returns/supplierPayments/openingEntries)
+// থেকে chronological লেজার। কোনো নতুন Firestore query লাগে না।
+// ⚠️ payable-change লজিক api-client.js-এর apiSubmitPurchase()/
+// apiSubmitSupplierReturn()-এর সাথে হুবহু মিলিয়ে রাখা হয়েছে:
+//   - ক্রয় (বাকি) → +totalCost, ক্রয় (নগদ) → পাওনায় প্রভাব নেই
+//   - রিটার্ন (ফেরত + পাওনা সমন্বয়) → −amount, অন্য কম্বিনেশনে প্রভাব নেই
+//   - রাইট-অফ (ধ্বংস) → পাওনায় কোনো প্রভাব নেই (pure loss)
+//   - পরিশোধ → −amount, opening entry → +amount
+// ════════════════════════════════════════════════════════════
+
+function buildSupplierHistoryEntries(supId) {
+  const entries = [];
+
+  APP_STATE.purchases.filter(p => p.supplierId === supId).forEach(p => {
+    const isDue = p.paymentType === 'বাকি';
+    entries.push({
+      date: p.date, type: 'purchase',
+      label: `ক্রয় ${p.purchaseId}`,
+      detail: `৳${fmt(p.totalCost)} — ${esc(p.paymentType)}`,
+      payableChange: isDue ? p.totalCost : 0,
+    });
+  });
+
+  APP_STATE.returns.filter(r => r.returnType === 'supplier' && r.partyId === supId).forEach(r => {
+    const isPayableAdjust = r.reason === 'ফেরত' && r.refundMethod === 'পাওনা সমন্বয়';
+    const label = r.reason === 'ধ্বংস' ? `রাইট-অফ ${r.refId}` : `রিটার্ন ${r.refId}`;
+    entries.push({
+      date: r.date, type: 'return',
+      label,
+      detail: r.reason === 'ধ্বংস' ? `৳${fmt(r.amount)} — মেয়াদোত্তীর্ণ ক্ষতি` : `৳${fmt(r.amount)} — ${esc(r.refundMethod || '—')}`,
+      payableChange: isPayableAdjust ? -r.amount : 0,
+    });
+  });
+
+  (APP_STATE.supplierPayments || []).filter(p => p.supplierId === supId).forEach(p => {
+    entries.push({
+      date: p.date, type: 'payment',
+      label: `পাওনা পরিশোধ${p.note ? ' — ' + p.note : ''}`,
+      detail: `৳${fmt(p.amount)}`,
+      payableChange: -p.amount,
+    });
+  });
+
+  (APP_STATE.openingEntries || []).filter(e => e.category === 'সরবরাহকারী বাকি' && e.supplierId === supId).forEach(e => {
+    entries.push({
+      date: e.date, type: 'opening',
+      label: 'পূর্বের হিসাব (Opening)',
+      detail: e.description || '৳' + fmt(e.amount),
+      payableChange: e.amount || 0,
+    });
+  });
+
+  entries.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+  let running = 0;
+  entries.forEach(e => { running = round2(running + e.payableChange); e.runningPayable = running; });
+
+  return entries.reverse();
+}
+
+function openSupplierHistory(supId) {
+  const sup = APP_STATE.suppliers.find(s => s.id === supId);
+  if (!sup) return;
+
+  const entries = buildSupplierHistoryEntries(supId);
+  const totalPurchases = entries.filter(e => e.type === 'purchase').length;
+  const totalPaid = round2(entries.filter(e => e.type === 'payment').reduce((a, e) => a - e.payableChange, 0));
+  const totalReturns = entries.filter(e => e.type === 'return').length;
+
+  const anyCapReached = APP_STATE.capReached && (APP_STATE.capReached.purchases || APP_STATE.capReached.returns);
+  const capWarning = (anyCapReached && !APP_STATE.olderHistoryLoaded)
+    ? `<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs rounded-lg px-3 py-2 mb-3">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i> সাম্প্রতিক ৮,০০০টার বেশি এন্ট্রি থাকলে এই ইতিহাস অসম্পূর্ণ হতে পারে — চলমান পাওনার হিসাব বর্তমান প্রকৃত পাওনার (৳${fmt(sup.totalPayable || 0)}) সাথে না মিলতে পারে। Analytics ট্যাব থেকে "১২ মাসের আগের হিস্টোরি লোড করুন" চাপলে ঠিক হয়ে যাবে।
+      </div>` : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'sup-history-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-clock-rotate-left text-brand mr-1"></i> ইতিহাস — ${esc(sup.name)}</h4>
+      <p class="text-xs text-slate-400 mb-4">${esc(sup.phone || '')} ${sup.address ? '• ' + esc(sup.address) : ''}</p>
+
+      ${capWarning}
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <div class="bg-brand/5 rounded-lg p-2.5 text-center">
+          <div class="text-[10px] text-slate-400">মোট ক্রয়</div>
+          <div class="font-mono font-bold text-brand">${totalPurchases} টি</div>
+        </div>
+        <div class="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2.5 text-center">
+          <div class="text-[10px] text-slate-400">মোট পরিশোধ</div>
+          <div class="font-mono font-bold text-emerald-600">৳${fmt(totalPaid)}</div>
+        </div>
+        <div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5 text-center">
+          <div class="text-[10px] text-slate-400">রিটার্ন/রাইট-অফ</div>
+          <div class="font-mono font-bold text-red-500">${totalReturns} টি</div>
+        </div>
+        <div class="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2.5 text-center">
+          <div class="text-[10px] text-slate-400">বর্তমান পাওনা</div>
+          <div class="font-mono font-bold text-amber-600">৳${fmt(sup.totalPayable || 0)}</div>
+        </div>
+      </div>
+
+      <div class="border border-slate-200 dark:border-slate-600 rounded-lg overflow-hidden">
+        <div class="max-h-96 overflow-y-auto">
+          ${entries.length ? entries.map(e => renderSupHistoryRow(e)).join('') : `
+            <div class="px-4 py-8 text-center text-slate-400 text-sm">কোনো লেনদেন পাওয়া যায়নি</div>`}
+        </div>
+      </div>
+
+      <button onclick="document.getElementById('sup-history-modal').remove()" class="btn btn-secondary btn-block mt-4">বন্ধ করুন</button>
+    </div>`;
+  document.body.appendChild(modal);
+  openAppModal('sup-history-modal', () => document.getElementById('sup-history-modal')?.remove());
+}
+
+function renderSupHistoryRow(e) {
+  const typeIcon = { purchase: 'fa-truck-field text-brand', return: 'fa-rotate-left text-red-500', payment: 'fa-money-bill-transfer text-emerald-500', opening: 'fa-clock-rotate-left text-slate-400' }[e.type];
+  const payableChangeText = e.payableChange === 0 ? '' :
+    `<span class="font-mono text-xs ${e.payableChange > 0 ? 'text-red-500' : 'text-emerald-600'}">${e.payableChange > 0 ? '+' : ''}৳${fmt(Math.abs(e.payableChange))}</span>`;
+  return `
+    <div class="px-4 py-2.5 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center gap-2 text-sm">
+      <div class="min-w-0 flex items-center gap-2">
+        <i class="fa-solid ${typeIcon} text-xs w-4 text-center flex-shrink-0"></i>
+        <div class="min-w-0">
+          <div class="font-semibold text-slate-700 dark:text-slate-200 truncate">${esc(e.label)}</div>
+          <div class="text-[11px] text-slate-400">${esc(e.date)} • ${esc(e.detail)}</div>
+        </div>
+      </div>
+      <div class="text-right flex-shrink-0">
+        ${payableChangeText}
+        <div class="text-[10px] text-slate-400">পাওনা: ৳${fmt(e.runningPayable)}</div>
+      </div>
+    </div>`;
 }
