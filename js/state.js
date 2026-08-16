@@ -24,6 +24,7 @@ const APP_STATE = {
   logoBase64: '',   // ✅ নতুন — আইটেম ১২: রিসিট লোগো (base64, Firestore config/settings-এ)
   lastExportAt: null, // ✅ ধাপ ০.৩ — ব্যাকআপ রিমাইন্ডার, শেষ Excel-export টাইমস্ট্যাম্প
   lowStockLevel: 10,
+  expiryAlertDays: 90,
   historyCutoff: '',
   olderHistoryLoaded: false,
   capReached: { sales: false, purchases: false, returns: false },
