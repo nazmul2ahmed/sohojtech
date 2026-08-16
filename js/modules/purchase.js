@@ -740,15 +740,23 @@ async function deletePurchaseConfirm(purchaseId) {
 }
 
 // ════════════════════════════════════════════════════════════
-// ✅ Step 4 — AI ইনভয়েস স্ক্যান — ছবি থেকে ক্রয়-এন্ট্রি pre-fill
-// (human-confirmation gate: শুধু APP_STATE.purItems[] pre-fill হয়,
-// submitPurchase() না চাপা পর্যন্ত কিছুই Firestore-এ যায় না)
+// ✅ মাল্টি-পেজ AI ইনভয়েস স্ক্যান — কোনো পেজ-সংখ্যা সীমা নেই।
+// পেজ বাড়লে adaptive compression (tier-ভিত্তিক) দিয়ে প্রতি-পেজ
+// resolution/quality কমে, যাতে মোট payload নিরাপদ সীমায় থাকে।
+// প্রতিটা পেজের আসল File রেফারেন্স রাখা হয় (সংকুচিত dataUrl থেকে
+// না) — যাতে পেজ-সংখ্যা বদলে tier পাল্টালে বারবার কম্প্রেস করলেও
+// generation-loss জমতে না থাকে।
 // ════════════════════════════════════════════════════════════
-const PUR_SCAN_MAX_DIM = 2400;
-const PUR_SCAN_JPEG_QUALITY = 0.85;
-const PUR_SCAN_MAX_BYTES = 1800 * 1024; // ✅ টেস্ট: ১৮০০ KB — ছোট সংখ্যা/টেক্সট স্পষ্ট রাখতে রেজোলিউশন/কোয়ালিটি বাড়ানো হয়েছে
+const PUR_SCAN_TOTAL_BUDGET_BYTES = 18 * 1024 * 1024; // ~১৮ MB — provider per-request সীমার নিরাপদ মার্জিন
 
-function compressInvoiceImageFile(file) {
+function getPurScanCompressionTier(pageCount) {
+  if (pageCount <= 3)  return { maxDim: 2400, quality: 0.85, maxBytes: 1800 * 1024 };
+  if (pageCount <= 8)  return { maxDim: 1800, quality: 0.75, maxBytes: 900  * 1024 };
+  if (pageCount <= 15) return { maxDim: 1400, quality: 0.65, maxBytes: 550  * 1024 };
+  return                      { maxDim: 1100, quality: 0.55, maxBytes: 350  * 1024 };
+}
+
+function compressInvoiceImageFile(file, tier) {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
       reject(new Error('শুধু ছবি ফাইল (JPG/PNG) আপলোড করুন।'));
@@ -759,7 +767,7 @@ function compressInvoiceImageFile(file) {
       const img = new Image();
       img.onload = () => {
         let w = img.width, h = img.height;
-        const scale = Math.min(1, PUR_SCAN_MAX_DIM / Math.max(w, h));
+        const scale = Math.min(1, tier.maxDim / Math.max(w, h));
         w = Math.max(1, Math.round(w * scale));
         h = Math.max(1, Math.round(h * scale));
         const canvas = document.createElement('canvas');
@@ -767,7 +775,17 @@ function compressInvoiceImageFile(file) {
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', PUR_SCAN_JPEG_QUALITY));
+
+        // ✅ tier.maxBytes ছুঁতে না পারলে কোয়ালিটি ধাপে ধাপে কমিয়ে সর্বোচ্চ
+        // ৩ বার রিট্রাই — শেষমেশ না মিললেও শেষ ফলাফলই ব্যবহার হবে, ব্লক করা হয় না
+        let q = tier.quality;
+        let dataUrl = canvas.toDataURL('image/jpeg', q);
+        let attempts = 0;
+        while (dataUrl.length > tier.maxBytes && attempts < 3 && q > 0.35) {
+          q -= 0.15; attempts++;
+          dataUrl = canvas.toDataURL('image/jpeg', q);
+        }
+        resolve(dataUrl);
       };
       img.onerror = () => reject(new Error('ছবি পড়া যায়নি — ফাইলটা corrupted হতে পারে।'));
       img.src = e.target.result;
@@ -777,25 +795,35 @@ function compressInvoiceImageFile(file) {
   });
 }
 
-let _purScanImageBase64 = null;
+let _purScanPages = []; // [{ id, file, dataUrl }] — ক্রম অনুযায়ী পেজ ১, ২, ৩...
+let _purScanPageIdSeq = 0;
+let _purScanRecompressing = false;
+
+function purScanTotalBytes() {
+  return _purScanPages.reduce((a, p) => a + (p.dataUrl ? p.dataUrl.length : 0), 0);
+}
 
 function openPurInvoiceScanModal() {
   if (guardReadOnly()) return;
   if (document.getElementById('pur-scan-modal')) return;
+  _purScanPages = [];
+  _purScanPageIdSeq = 0;
+
   const modal = document.createElement('div');
   modal.id = 'pur-scan-modal';
   modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
   modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
       <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-camera text-brand mr-1"></i> ইনভয়েস স্ক্যান করুন (AI)</h4>
-      <p class="text-xs text-slate-400 mb-4">ক্রয়-ইনভয়েসের ছবি তুলুন বা আপলোড করুন — AI প্রতিটা লাইন-আইটেম পড়ে ফর্মে বসিয়ে দেবে। <b>কিছুই সরাসরি সংরক্ষণ হবে না</b> — আপনাকে যাচাই করে "ক্রয় নিশ্চিত করুন" চাপতেই হবে।</p>
+      <p class="text-xs text-slate-400 mb-4">একাধিক পেজের ইনভয়েস হলে প্রতিটা পেজের ছবি একটার পর একটা যোগ করুন — সব পেজ একসাথে একবারেই স্ক্যান হবে। <b>কিছুই সরাসরি সংরক্ষণ হবে না</b> — যাচাই করে "ক্রয় নিশ্চিত করুন" চাপতেই হবে।</p>
       <div id="pur-scan-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
 
-      <div id="pur-scan-preview-box" class="mb-3"></div>
+      <div id="pur-scan-pages-box" class="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3"></div>
+      <div id="pur-scan-size-note" class="mb-3"></div>
 
       <input type="file" id="pur-scan-file" accept="image/*" capture="environment" class="hidden" onchange="onPurScanFileSelect(event)"/>
       <label for="pur-scan-file" class="btn btn-brand-outline btn-block cursor-pointer mb-3">
-        <i class="fa-solid fa-image mr-1"></i> ছবি বাছাই করুন
+        <i class="fa-solid fa-plus mr-1"></i> পেজ যোগ করুন
       </label>
 
       <div class="flex gap-2">
@@ -807,59 +835,122 @@ function openPurInvoiceScanModal() {
     </div>`;
   document.body.appendChild(modal);
   openAppModal('pur-scan-modal', closePurScanModal);
+  renderPurScanPagesUI();
 }
 
 function closePurScanModal() {
   document.getElementById('pur-scan-modal')?.remove();
-  _purScanImageBase64 = null;
+  _purScanPages = [];
 }
 
 async function onPurScanFileSelect(event) {
   const errEl = document.getElementById('pur-scan-error');
   errEl.classList.add('hidden');
   const file = event.target.files[0];
+  event.target.value = ''; // ✅ একই ফাইল আবার সিলেক্ট করলেও change ইভেন্ট ফায়ার হবে
   if (!file) return;
 
-  const previewBox = document.getElementById('pur-scan-preview-box');
-  previewBox.innerHTML = `<div class="text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> ছবি প্রসেস হচ্ছে...</div>`;
+  if (!file.type.startsWith('image/')) {
+    errEl.textContent = 'শুধু ছবি ফাইল (JPG/PNG) আপলোড করুন।';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  _purScanPages.push({ id: ++_purScanPageIdSeq, file, dataUrl: null });
+  await recompressAllPurScanPages();
+}
+
+// ✅ পেজ-সংখ্যা বদলালে (add/remove) সঠিক tier অনুযায়ী সব পেজ আবার
+// কম্প্রেস করা হয় — প্রতিটা page.file (আসল ফাইল) থেকে, আগের সংকুচিত
+// dataUrl থেকে না — নাহলে বারবার কম্প্রেস করলে কোয়ালিটি ক্রমাগত খারাপ হতো।
+async function recompressAllPurScanPages() {
+  if (_purScanRecompressing) return;
+  _purScanRecompressing = true;
+  const box = document.getElementById('pur-scan-pages-box');
+  if (box) box.innerHTML = `<div class="col-span-3 sm:col-span-4 text-center text-xs text-slate-400 py-3"><i class="fa-solid fa-spinner fa-spin mr-1"></i> ছবি প্রসেস হচ্ছে...</div>`;
 
   try {
-    const dataUrl = await compressInvoiceImageFile(file);
-    if (dataUrl.length > PUR_SCAN_MAX_BYTES) {
-      throw new Error('কম্প্রেস করার পরও ছবির সাইজ বড় — আরও স্পষ্ট/কাছ থেকে তোলা ছোট একটা ছবি ব্যবহার করুন।');
+    const tier = getPurScanCompressionTier(_purScanPages.length);
+    for (const page of _purScanPages) {
+      page.dataUrl = await compressInvoiceImageFile(page.file, tier);
     }
-    _purScanImageBase64 = dataUrl;
-    previewBox.innerHTML = `<img src="${dataUrl}" class="w-full max-h-48 object-contain border border-slate-200 dark:border-slate-600 rounded-lg bg-white"/>`;
-    document.getElementById('pur-scan-submit-btn').disabled = false;
   } catch (err) {
-    errEl.textContent = err.message;
-    errEl.classList.remove('hidden');
-    previewBox.innerHTML = '';
-    _purScanImageBase64 = null;
-    document.getElementById('pur-scan-submit-btn').disabled = true;
+    const errEl = document.getElementById('pur-scan-error');
+    if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
   } finally {
-    event.target.value = '';
+    _purScanRecompressing = false;
+    renderPurScanPagesUI();
   }
 }
 
+function removePurScanPage(id) {
+  _purScanPages = _purScanPages.filter(p => p.id !== id);
+  recompressAllPurScanPages(); // পেজ কমলে হালকা tier প্রযোজ্য হতে পারে
+}
+
+function movePurScanPage(id, dir) {
+  const idx = _purScanPages.findIndex(p => p.id === id);
+  const newIdx = idx + dir;
+  if (idx === -1 || newIdx < 0 || newIdx >= _purScanPages.length) return;
+  const [item] = _purScanPages.splice(idx, 1);
+  _purScanPages.splice(newIdx, 0, item);
+  renderPurScanPagesUI(); // ✅ শুধু reorder — কম্প্রেশন অপরিবর্তিত থাকে বলে re-compress লাগে না
+}
+
+function renderPurScanPagesUI() {
+  const box = document.getElementById('pur-scan-pages-box');
+  const sizeNote = document.getElementById('pur-scan-size-note');
+  const submitBtn = document.getElementById('pur-scan-submit-btn');
+  if (!box) return;
+
+  if (!_purScanPages.length) {
+    box.innerHTML = `<div class="col-span-3 sm:col-span-4 text-center text-xs text-slate-400 py-4">এখনো কোনো পেজ যোগ করা হয়নি</div>`;
+  } else {
+    box.innerHTML = _purScanPages.map((p, i) => `
+      <div class="relative border border-slate-200 dark:border-slate-600 rounded-lg overflow-hidden bg-white">
+        <img src="${p.dataUrl || ''}" class="w-full h-20 object-cover"/>
+        <span class="absolute top-1 left-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">পেজ ${i + 1}</span>
+        <button type="button" onclick="removePurScanPage(${p.id})" class="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+        <div class="absolute bottom-1 right-1 flex gap-1">
+          ${i > 0 ? `<button type="button" onclick="movePurScanPage(${p.id},-1)" class="bg-black/60 hover:bg-brand text-white w-5 h-5 rounded text-[10px] flex items-center justify-center"><i class="fa-solid fa-arrow-left"></i></button>` : ''}
+          ${i < _purScanPages.length - 1 ? `<button type="button" onclick="movePurScanPage(${p.id},1)" class="bg-black/60 hover:bg-brand text-white w-5 h-5 rounded text-[10px] flex items-center justify-center"><i class="fa-solid fa-arrow-right"></i></button>` : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  const totalBytes = purScanTotalBytes();
+  const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+  const overBudget = totalBytes > PUR_SCAN_TOTAL_BUDGET_BYTES;
+
+  if (sizeNote) {
+    sizeNote.innerHTML = _purScanPages.length
+      ? `<span class="text-[11px] ${overBudget ? 'text-red-500 font-semibold' : 'text-slate-400'}">মোট ${_purScanPages.length} পেজ, আনুমানিক সাইজ: ${totalMB} MB${overBudget ? ' — সীমা ছাড়িয়ে গেছে, কিছু পেজ সরান বা আলাদাভাবে স্ক্যান করুন।' : ''}</span>`
+      : '';
+  }
+
+  if (submitBtn) submitBtn.disabled = !_purScanPages.length || overBudget || _purScanRecompressing;
+}
+
 async function runPurInvoiceScan() {
-  if (!_purScanImageBase64) return;
+  if (!_purScanPages.length) return;
   const errEl = document.getElementById('pur-scan-error');
   errEl.classList.add('hidden');
   const btn = document.getElementById('pur-scan-submit-btn');
   btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> AI পড়ছে...';
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> AI পড়ছে (${_purScanPages.length} পেজ)...`;
 
   try {
-    // data URL-এর prefix (data:image/jpeg;base64,) বাদ — AiProxy.gs raw base64 আশা করে
-    const base64Only = _purScanImageBase64.split(',')[1];
-    const res = await callAiTask('purchaseInvoiceReader', { imageBase64: base64Only });
+    // data URL prefix বাদ — AiProxy.gs raw base64 আশা করে, প্রতিটা পেজের জন্য
+    const imagesBase64 = _purScanPages.map(p => p.dataUrl.split(',')[1]);
+    const res = await callAiTask('purchaseInvoiceReader', { imagesBase64 });
     const items = (res.data && res.data.items) || [];
     if (!items.length) {
-      throw new Error('কোনো লাইন-আইটেম শনাক্ত করা যায়নি — ছবিটা স্পষ্ট কিনা যাচাই করে আবার চেষ্টা করুন, অথবা ম্যানুয়ালি এন্ট্রি করুন।');
+      throw new Error('কোনো লাইন-আইটেম শনাক্ত করা যায়নি — ছবিগুলো স্পষ্ট কিনা যাচাই করে আবার চেষ্টা করুন, অথবা ম্যানুয়ালি এন্ট্রি করুন।');
     }
     applyAiScannedItemsToPurchaseForm(items, res.data && res.data.invoice_total);
-    toast(`AI ${items.length}টা লাইন-আইটেম পড়েছে — প্রতিটা যাচাই করে "ক্রয় নিশ্চিত করুন" চাপুন।`, 's');
+    toast(`AI ${_purScanPages.length} পেজ থেকে ${items.length}টা লাইন-আইটেম পড়েছে — প্রতিটা যাচাই করে "ক্রয় নিশ্চিত করুন" চাপুন।`, 's');
     closePurScanModal();
   } catch (err) {
     errEl.textContent = humanizeError(err);
