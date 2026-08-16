@@ -65,7 +65,8 @@ function computeDashboardMetrics(state) {
   const lowStock = state.inventory.filter(m => m.status === 'low');
   const outStock = state.inventory.filter(m => m.status === 'out');
 
-  // ── Expiry Alert (৯০ দিন) ──
+  // ✅ ধাপ ৩৫.১ — hardcoded ৯০ বাদ, এখন APP_STATE.expiryAlertDays (Settings-এ কনফিগারযোগ্য)
+  const expiryAlertDays = state.expiryAlertDays || 90;
   const now = new Date(); now.setHours(0, 0, 0, 0);
   const expiryAlerts = state.inventory
     .filter(m => m.nearestExpiry)
@@ -73,15 +74,19 @@ function computeDashboardMetrics(state) {
       const ed = parseExpiryDate(m.nearestExpiry);
       return ed ? { ...m, daysLeft: Math.ceil((ed - now) / 86400000) } : null;
     })
-    .filter(m => m && m.daysLeft <= 90)
+    .filter(m => m && m.daysLeft <= expiryAlertDays)
     .sort((a, b) => a.daysLeft - b.daysLeft);
+
+  // ✅ নতুন — ইতিমধ্যে মেয়াদোত্তীর্ণ (patient-safety/compliance — সবচেয়ে জরুরি,
+  // আগে suggestion-এর daysLeft>=0 ফিল্টারে বাদ পড়ে যেত)
+  const expiredItems = expiryAlerts.filter(m => m.daysLeft < 0);
 
   return {
     netRevenue, netCogs, discountTotal, grossProfit, todayExpenseTotal, netProfit,
     newDueToday, cashFromSalesToday, dueCollectedToday, cashPurchaseToday, supplierPaymentTotal,
     cashIn, cashOut, netCashFlow,
     totalCustDue, totalSupPayable, dueCustomers, netReceivableChange,
-    stockCostValue, stockMrpValue, lowStock, outStock, expiryAlerts,
+    stockCostValue, stockMrpValue, lowStock, outStock, expiryAlerts, expiredItems,
     invoiceCount: todaySales.length, paymentCount: todayPayments.length,
     todayPayments, revenueReturnToday, writeOffLossToday, todayReturns,
   };
@@ -133,13 +138,21 @@ function computeSmartSuggestions(state) {
     suggestions.push({ icon: 'fa-box-open', color: 'amber', text: `${lowStock.length} টি ওষুধের স্টক কমে যাচ্ছে — রি-অর্ডার করার কথা ভাবুন।` });
   }
 
+  // ✅ ধাপ ৩৫.১ — তিন-স্তর: expired (<0, এখন আলাদা লাল ব্যানারে দেখানো হয়, এখানে
+  // যোগ হয় না যাতে ডাবল-নোটিফাই না হয়), critical (0-30), medium (30-expiryAlertDays)
+  const expiryAlertDays = state.expiryAlertDays || 90;
   const now = new Date(); now.setHours(0, 0, 0, 0);
-  const criticalExpiry = state.inventory
+  const expiryComputed = state.inventory
     .filter(m => m.nearestExpiry)
     .map(m => { const ed = parseExpiryDate(m.nearestExpiry); return ed ? { daysLeft: Math.ceil((ed - now) / 86400000) } : null; })
-    .filter(m => m && m.daysLeft <= 30 && m.daysLeft >= 0);
+    .filter(Boolean);
+  const criticalExpiry = expiryComputed.filter(m => m.daysLeft >= 0 && m.daysLeft <= 30);
+  const mediumExpiry = expiryComputed.filter(m => m.daysLeft > 30 && m.daysLeft <= expiryAlertDays);
   if (criticalExpiry.length > 0) {
     suggestions.push({ icon: 'fa-triangle-exclamation', color: 'red', text: `${criticalExpiry.length} টি ওষুধের মেয়াদ ৩০ দিনের মধ্যে শেষ হচ্ছে — আগে বিক্রি/ফেরত দেওয়ার ব্যবস্থা করুন।` });
+  }
+  if (mediumExpiry.length > 0) {
+    suggestions.push({ icon: 'fa-hourglass-half', color: 'amber', text: `${mediumExpiry.length} টি ওষুধের মেয়াদ আগামী ${expiryAlertDays} দিনের মধ্যে শেষ হবে — আগেভাগে পরিকল্পনা করে রাখুন।` });
   }
 
   const dueCustomers = state.customers.filter(c => c.due > 0).sort((a, b) => b.due - a.due);
@@ -218,6 +231,47 @@ function renderBackupReminderBanner() {
     </div>`;
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ৩৫.১ — ইতিমধ্যে মেয়াদোত্তীর্ণ ওষুধের জন্য আলাদা, জোরালো ব্যানার
+// (Smart Suggestion-এর সাধারণ "reorder করুন" টাইপ পরামর্শ থেকে গুণগতভাবে
+// ভিন্ন — এটা patient-safety/compliance issue, কাউন্টার-স্টাফ যেন ভুলে
+// বিক্রি না করে ফেলে)
+// ════════════════════════════════════════════════════════════
+function renderExpiredMedicineBanner(expiredItems) {
+  if (!expiredItems.length) return '';
+  return `
+    <div class="bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl px-4 py-3 mb-5">
+      <div class="flex items-start gap-3">
+        <i class="fa-solid fa-skull-crossbones text-lg mt-0.5"></i>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-sm mb-1">${expiredItems.length} টি ওষুধের মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে</div>
+          <p class="text-xs mb-3">এই ওষুধগুলো বিক্রি করা যাবে না — এখনই রিটার্ন বা রাইট-অফ (ধ্বংস) করুন। ভুলে বিক্রি হয়ে গেলে রোগীর ক্ষতি ও আইনি ঝুঁকি দুটোই আছে।</p>
+          <div class="space-y-1.5">
+            ${expiredItems.map(x => `
+              <div class="flex items-center justify-between gap-2 bg-white dark:bg-slate-800 rounded-lg px-3 py-2">
+                <div class="min-w-0">
+                  <span class="font-semibold text-slate-800 dark:text-white text-sm">${esc(x.brand)}</span>
+                  <span class="text-[11px] text-red-500 ml-2">মেয়াদ শেষ হয়েছে ${Math.abs(x.daysLeft)} দিন আগে</span>
+                </div>
+                <button onclick="goToReturnForExpiredMedicine()" class="text-xs font-semibold text-brand hover:underline whitespace-nowrap flex-shrink-0">
+                  <i class="fa-solid fa-rotate-left mr-1"></i>রিটার্ন/রাইট-অফ
+                </button>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ⚠️ Phase ১ — শুধু Returns ট্যাবের সাপ্লায়ার-সাব-ট্যাবে নিয়ে যায়, নির্দিষ্ট
+// purchase/batch প্রি-সিলেক্ট করে না। পরের ধাপে batchId→purchase reverse-lookup
+// দিয়ে স্মার্ট prefill যোগ হবে।
+function goToReturnForExpiredMedicine() {
+  goTab('returns');
+  setTimeout(() => { if (typeof setRetMode === 'function') setRetMode('supplier'); }, 100);
+  toast('উপরে থেকে সংশ্লিষ্ট ক্রয় (Purchase) খুঁজে বের করে রিটার্ন/রাইট-অফ করুন — স্বয়ংক্রিয় প্রি-ফিল পরের ধাপে আসছে।', 'w');
+}
+
 function renderDashboardModule() {
   const container = document.getElementById('dashboard-content');
   if (!container) return;
@@ -228,6 +282,7 @@ function renderDashboardModule() {
 
   container.innerHTML = `
   ${renderBackupReminderBanner()}
+  ${renderExpiredMedicineBanner(m.expiredItems)}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
       ${kpiCard('আজকের বিক্রয় (নিট)', '৳' + fmtK(m.netRevenue), m.invoiceCount + ' টি ইনভয়েস', 'fa-sack-dollar', 'blue')}
       ${kpiCard('নিট মুনাফা (Net Profit)', (m.netProfit >= 0 ? '৳' : '−৳') + fmtK(Math.abs(m.netProfit)), 'Revenue − COGS − Expense − Write-off', 'fa-chart-line', m.netProfit >= 0 ? 'green' : 'red')}
@@ -341,7 +396,7 @@ function renderDashboardModule() {
           ${m.expiryAlerts.length ? m.expiryAlerts.map(x => `
             <div class="px-5 py-2.5 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center text-sm">
               <div><span class="font-semibold">${esc(x.brand)}</span></div>
-              <span class="text-xs font-semibold ${x.daysLeft <= 30 ? 'text-red-600' : 'text-amber-600'}">${x.daysLeft} দিন</span>
+              <span class="text-xs font-semibold ${x.daysLeft <= 30 ? 'text-red-600' : 'text-amber-600'}">${x.daysLeft < 0 ? 'মেয়াদ শেষ' : x.daysLeft + ' দিন বাকি'}</span>
             </div>`).join('') : emptyRow('কোনো সতর্কতা নেই')}
         </div>
       </div>
@@ -497,7 +552,8 @@ function buildAiInsightSummaryPayload(state) {
   return {
     outOfStockCount: m.outStock.length,
     lowStockCount: m.lowStock.length,
-    expiringSoonCount: m.expiryAlerts.filter(x => x.daysLeft <= 30).length,
+    expiredMedicineCount: m.expiredItems.length, // ✅ নতুন — আগে negative daysLeft বাদ পড়ে যেত
+    expiringSoonCount: m.expiryAlerts.filter(x => x.daysLeft >= 0 && x.daysLeft <= 30).length,
     totalCustomerDue: m.totalCustDue,
     dueCustomerCount: m.dueCustomers.length,
     todayNetProfit: m.netProfit,
