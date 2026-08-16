@@ -41,9 +41,15 @@ function renderPurchaseModule() {
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
             <i class="fa-solid fa-cart-flatbed text-brand"></i> নতুন ক্রয় এন্ট্রি
           </h5>
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3 flex-wrap">
             <button onclick="openPurInvoiceScanModal()" class="text-xs text-brand hover:underline flex items-center gap-1">
               <i class="fa-solid fa-camera"></i> AI দিয়ে স্ক্যান করুন
+            </button>
+            <button onclick="savePurchaseCartAsDraft()" class="text-xs text-brand hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-bookmark"></i> খসড়া সংরক্ষণ করুন
+            </button>
+            <button onclick="openPurchaseDraftsModal()" class="text-xs text-slate-500 hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-layer-group"></i> <span id="purchase-drafts-count">ড্রাফট (0)</span>
             </button>
             <button onclick="resetPurchase()" class="text-xs text-red-600 hover:underline flex items-center gap-1">
               <i class="fa-solid fa-rotate-left"></i> রিসেট
@@ -135,6 +141,7 @@ function renderPurchaseModule() {
   updatePurPayTypeUI();
   calcPurTotal();
   renderTodayPurchases();
+  renderPurchaseDraftBadge(); // ✅ নতুন — ক্রয়-খসড়া সংখ্যা
 
   setTimeout(() => focusPurMedicineInput(0), 50);
 }
@@ -1342,4 +1349,105 @@ async function submitQuickAddMedicine(i) {
     btn.disabled = false;
     btn.textContent = 'যোগ করে বসান';
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ PURCHASE CART/DRAFT — POS-এর একই প্যাটার্ন। AI-স্ক্যান করা
+// আংশিক-যাচাই করা আইটেমও এভাবে সংরক্ষণ করা যায় (aiScanned/aiRawBrand
+// ফিল্ডসহ পুরো purItems serialize হয়)।
+// ⚠️ AI-reconciliation ব্যানারের APP_STATE.purAiInvoiceTotal ড্রাফটে
+// সংরক্ষিত হয় না (ইচ্ছাকৃত — সেটা সেই নির্দিষ্ট স্ক্যান-সেশনের জন্য,
+// ড্রাফট রিলোডে অর্থহীন হয়ে যায়)।
+// ════════════════════════════════════════════════════════════
+function capturePurchaseDraftState() {
+  return {
+    purItems: JSON.parse(JSON.stringify(APP_STATE.purItems || [])),
+    purSupplierId: APP_STATE.purSupplierId || null,
+    purDate: document.getElementById('pur-date')?.value || APP_STATE.purDate,
+    purPayType: APP_STATE.purPayType || 'নগদ',
+    purGrossDiscPct: APP_STATE.purGrossDiscPct || 0,
+  };
+}
+
+function savePurchaseCartAsDraft() {
+  const hasItems = (APP_STATE.purItems || []).some(i => i.medId);
+  if (!hasItems) { toast('ক্রয়-ফর্মে কোনো ওষুধ নেই — সংরক্ষণ করার কিছু নেই।', 'w'); return; }
+
+  const supId = APP_STATE.purSupplierId;
+  const supName = supId ? (APP_STATE.suppliers.find(s => s.id === supId)?.name || supId) : 'সরবরাহকারী নির্বাচিত নয়';
+  const itemCount = APP_STATE.purItems.filter(i => i.medId).length;
+
+  addDraft('purchase', `${supName} — ${itemCount} আইটেম`, capturePurchaseDraftState());
+  toast('ক্রয়-খসড়া সংরক্ষিত হয়েছে — এখন নতুন ক্রয় শুরু করতে পারেন।', 's');
+  resetPurchase();
+  renderPurchaseDraftBadge();
+}
+
+function renderPurchaseDraftBadge() {
+  const el = document.getElementById('purchase-drafts-count');
+  if (el) el.textContent = `ড্রাফট (${getDraftCount('purchase')})`;
+}
+
+function openPurchaseDraftsModal() {
+  document.getElementById('purchase-drafts-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'purchase-drafts-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-layer-group text-brand mr-1"></i> সংরক্ষিত ক্রয়-খসড়া</h4>
+      <p class="text-xs text-slate-400 mb-4">শুধু এই ডিভাইসে সংরক্ষিত থাকে — অন্য ডিভাইস/ব্রাউজারে দেখা যাবে না।</p>
+      <div id="purchase-drafts-list" class="space-y-2 mb-4"></div>
+      <button onclick="document.getElementById('purchase-drafts-modal').remove()" class="btn btn-secondary btn-block">বন্ধ করুন</button>
+    </div>`;
+  document.body.appendChild(modal);
+  openAppModal('purchase-drafts-modal', () => document.getElementById('purchase-drafts-modal')?.remove());
+  renderPurchaseDraftsList(getDrafts('purchase'));
+}
+
+function renderPurchaseDraftsList(drafts) {
+  const box = document.getElementById('purchase-drafts-list');
+  if (!box) return;
+  if (!drafts.length) {
+    box.innerHTML = `<div class="text-center text-slate-400 text-sm py-6">কোনো সংরক্ষিত খসড়া নেই।</div>`;
+    return;
+  }
+  box.innerHTML = drafts.map(d => `
+    <div class="flex items-center justify-between gap-2 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold text-slate-800 dark:text-white truncate">${esc(d.label)}</div>
+        <div class="text-[11px] text-slate-400">${esc(formatRelativeTime(d.savedAt))}</div>
+      </div>
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <button onclick="loadPurchaseDraft('${d.id}')" class="text-brand text-xs font-semibold hover:underline">লোড করুন</button>
+        <button onclick="deletePurchaseDraftConfirm('${d.id}')" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash text-xs"></i></button>
+      </div>
+    </div>`).join('');
+}
+
+function loadPurchaseDraft(draftId) {
+  const draft = getDrafts('purchase').find(d => d.id === draftId);
+  if (!draft) return;
+
+  const hasCurrentItems = (APP_STATE.purItems || []).some(i => i.medId);
+  if (hasCurrentItems && !confirm('বর্তমান ক্রয়-ফর্মে অসংরক্ষিত আইটেম আছে — ড্রাফট লোড করলে এগুলো হারিয়ে যাবে। চালিয়ে যাবেন? (চাইলে আগে "খসড়া সংরক্ষণ করুন" চেপে নিজে সেভ করে নিন)')) return;
+
+  removeDraft('purchase', draftId);
+  APP_STATE.purItems = draft.state.purItems || [];
+  APP_STATE.purSupplierId = draft.state.purSupplierId || null;
+  APP_STATE.purDate = draft.state.purDate || null;
+  APP_STATE.purPayType = draft.state.purPayType || 'নগদ';
+  APP_STATE.purGrossDiscPct = draft.state.purGrossDiscPct || 0;
+  APP_STATE.purAiInvoiceTotal = null;
+
+  document.getElementById('purchase-drafts-modal')?.remove();
+  renderPurchaseModule();
+  toast('ড্রাফট লোড হয়েছে।', 's');
+}
+
+function deletePurchaseDraftConfirm(draftId) {
+  if (!confirm('এই সংরক্ষিত খসড়া মুছে ফেলতে চান?')) return;
+  removeDraft('purchase', draftId);
+  renderPurchaseDraftsList(getDrafts('purchase'));
+  renderPurchaseDraftBadge();
 }
