@@ -66,6 +66,18 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
+// ✅ Draft/cart তালিকায় "কতক্ষণ আগে সংরক্ষিত" দেখানোর জন্য
+function formatRelativeTime(isoStr) {
+  const then = new Date(isoStr).getTime();
+  const diffMin = Math.floor((Date.now() - then) / 60000);
+  if (diffMin < 1) return 'এইমাত্র';
+  if (diffMin < 60) return `${diffMin} মিনিট আগে`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} ঘণ্টা আগে`;
+  const d = new Date(isoStr);
+  return d.toLocaleDateString('bn-BD') + ' ' + d.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' });
+}
+
 // ════════════════════════════════════════════════════════════
 // ✅ ধাপ ২৩: Inventory batch থেকে derived summary fields বের করার
 // কেন্দ্রীয় হেল্পার — totalStock/costValue/mrpValue/nearestExpiry/status
