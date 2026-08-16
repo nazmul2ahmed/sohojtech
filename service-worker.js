@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sohojtech-shell-v44'; 
+const CACHE_NAME = 'sohojtech-shell-v45'; 
 const NETWORK_TIMEOUT_MS = 3000;
 
 // ══════════════════════════════════════════════════════════
@@ -14,7 +14,7 @@ const PRECACHE_URLS = [
   './js/config.js', './js/utils.js', './js/state.js', './js/ui-components.js', './js/receipt.js',
   './js/subscription-promo.js', './js/modules/contact.js', './js/modules/about.js',
   './js/modules/onboarding.js', './js/modules/tour.js',
-  './js/modules/dashboard.js', './js/modules/pos.js', './js/modules/purchase.js',
+  './js/modules/dashboard.js', './js/modules/reorder-list.js', './js/modules/pos.js', './js/modules/purchase.js',
   './js/modules/returns.js', './js/modules/opening.js', './js/modules/inventory.js',
   './js/modules/medicine.js', './js/modules/customers.js', './js/modules/suppliers.js',
   './js/modules/accounts.js', './js/modules/settings.js', './js/modules/admin.js',
@@ -23,7 +23,7 @@ const PRECACHE_URLS = [
   './js/auth.js', './js/api-client.js', './js/ai-service.js', './js/modules/ai-settings.js', './js/modules/analytics.js', './js/app.js',
   './js/modules/tour.js', './js/modules/changelog.js', 
   './assets/icons/icon-192.png', './assets/icons/icon-512.png',
-  './unsubscribe.html',
+  './unsubscribe.html', 
 ];
 
 // ══════════════════════════════════════════════════════════
