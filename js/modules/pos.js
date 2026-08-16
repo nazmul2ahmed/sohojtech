@@ -33,13 +33,21 @@ function renderPOSModule() {
     ${offlineBanner}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
             <i class="fa-solid fa-file-invoice text-brand"></i> নতুন বিক্রয় বিল
           </h5>
-          <button onclick="resetPOS()" class="text-xs text-red-600 hover:underline flex items-center gap-1">
-            <i class="fa-solid fa-rotate-left"></i> রিসেট
-          </button>
+          <div class="flex items-center gap-3 flex-wrap">
+            <button onclick="savePOSCartAsDraft()" class="text-xs text-brand hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-bookmark"></i> কার্ট সংরক্ষণ করুন
+            </button>
+            <button onclick="openPOSDraftsModal()" class="text-xs text-slate-500 hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-layer-group"></i> <span id="pos-drafts-count">ড্রাফট (0)</span>
+            </button>
+            <button onclick="resetPOS()" class="text-xs text-red-600 hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-rotate-left"></i> রিসেট
+            </button>
+          </div>
         </div>
 
         <div id="pos-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-3 py-2 mb-3"></div>
@@ -134,6 +142,7 @@ function renderPOSModule() {
   }
   calcPOSTotals();
   renderTodayPOSSales();
+  renderPOSDraftBadge(); // ✅ নতুন — কার্ট-ড্রাফট সংখ্যা
 
   setTimeout(() => focusMedicineInput(0), 50);
 }
@@ -652,4 +661,101 @@ async function deleteSaleConfirm(invoiceNo) {
     toast(res.message, 's');
     renderTodayPOSSales();
   } catch (err) { showFatalError('বিক্রয় মুছতে সমস্যা:\n' + humanizeError(err), err); }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ POS CART/DRAFT — বড় একটা বিক্রয় নিয়ে কাজ করতে করতে ছোট কিন্তু
+// জরুরি বিক্রয় সম্পন্ন করে আবার ফিরে আসার জন্য। localStorage-ভিত্তিক
+// (দেখুন js/draft-store.js) — শুধু এই ডিভাইসে থাকে।
+// ════════════════════════════════════════════════════════════
+function capturePOSDraftState() {
+  return {
+    posItems: JSON.parse(JSON.stringify(APP_STATE.posItems || [])),
+    posCustomerId: APP_STATE.posCustomerId || null,
+    posDate: document.getElementById('pos-date')?.value || APP_STATE.posDate,
+    posCashPaid: parseFloat(document.getElementById('pos-cash')?.value) || 0,
+    posGrossDiscPct: APP_STATE.posGrossDiscPct || 0,
+  };
+}
+
+function savePOSCartAsDraft() {
+  const hasItems = (APP_STATE.posItems || []).some(i => i.medId);
+  if (!hasItems) { toast('কার্টে কোনো ওষুধ নেই — সংরক্ষণ করার কিছু নেই।', 'w'); return; }
+
+  const custId = APP_STATE.posCustomerId || 'WALK_IN';
+  const custName = custId === 'WALK_IN' ? 'নগদ গ্রাহক' : (APP_STATE.customers.find(c => c.id === custId)?.name || custId);
+  const itemCount = APP_STATE.posItems.filter(i => i.medId).length;
+
+  addDraft('pos', `${custName} — ${itemCount} আইটেম`, capturePOSDraftState());
+  toast('কার্ট সংরক্ষিত হয়েছে — এখন নতুন বিক্রয় শুরু করতে পারেন।', 's');
+  resetPOS();
+  renderPOSDraftBadge();
+}
+
+function renderPOSDraftBadge() {
+  const el = document.getElementById('pos-drafts-count');
+  if (el) el.textContent = `ড্রাফট (${getDraftCount('pos')})`;
+}
+
+function openPOSDraftsModal() {
+  document.getElementById('pos-drafts-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'pos-drafts-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-layer-group text-brand mr-1"></i> সংরক্ষিত কার্ট</h4>
+      <p class="text-xs text-slate-400 mb-4">শুধু এই ডিভাইসে সংরক্ষিত থাকে — অন্য ডিভাইস/ব্রাউজারে দেখা যাবে না।</p>
+      <div id="pos-drafts-list" class="space-y-2 mb-4"></div>
+      <button onclick="document.getElementById('pos-drafts-modal').remove()" class="btn btn-secondary btn-block">বন্ধ করুন</button>
+    </div>`;
+  document.body.appendChild(modal);
+  openAppModal('pos-drafts-modal', () => document.getElementById('pos-drafts-modal')?.remove());
+  renderPOSDraftsList(getDrafts('pos'));
+}
+
+function renderPOSDraftsList(drafts) {
+  const box = document.getElementById('pos-drafts-list');
+  if (!box) return;
+  if (!drafts.length) {
+    box.innerHTML = `<div class="text-center text-slate-400 text-sm py-6">কোনো সংরক্ষিত কার্ট নেই।</div>`;
+    return;
+  }
+  box.innerHTML = drafts.map(d => `
+    <div class="flex items-center justify-between gap-2 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold text-slate-800 dark:text-white truncate">${esc(d.label)}</div>
+        <div class="text-[11px] text-slate-400">${esc(formatRelativeTime(d.savedAt))}</div>
+      </div>
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <button onclick="loadPOSDraft('${d.id}')" class="text-brand text-xs font-semibold hover:underline">লোড করুন</button>
+        <button onclick="deletePOSDraftConfirm('${d.id}')" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash text-xs"></i></button>
+      </div>
+    </div>`).join('');
+}
+
+function loadPOSDraft(draftId) {
+  const draft = getDrafts('pos').find(d => d.id === draftId);
+  if (!draft) return;
+
+  const hasCurrentItems = (APP_STATE.posItems || []).some(i => i.medId);
+  if (hasCurrentItems && !confirm('বর্তমান কার্টে অসংরক্ষিত আইটেম আছে — ড্রাফট লোড করলে এগুলো হারিয়ে যাবে। চালিয়ে যাবেন? (চাইলে আগে "কার্ট সংরক্ষণ করুন" চেপে নিজে সেভ করে নিন)')) return;
+
+  removeDraft('pos', draftId); // ✅ লোড করলে সেই ড্রাফট consume হয়ে যায় (আবার resave করলে নতুন এন্ট্রি হবে)
+  APP_STATE.posItems = draft.state.posItems || [];
+  APP_STATE.posCustomerId = draft.state.posCustomerId || null;
+  APP_STATE.posDate = draft.state.posDate || null;
+  APP_STATE.posCashPaid = draft.state.posCashPaid || null;
+  APP_STATE.posGrossDiscPct = draft.state.posGrossDiscPct || 0;
+
+  document.getElementById('pos-drafts-modal')?.remove();
+  renderPOSModule();
+  toast('ড্রাফট লোড হয়েছে।', 's');
+}
+
+function deletePOSDraftConfirm(draftId) {
+  if (!confirm('এই সংরক্ষিত কার্ট মুছে ফেলতে চান?')) return;
+  removeDraft('pos', draftId);
+  renderPOSDraftsList(getDrafts('pos'));
+  renderPOSDraftBadge();
 }
