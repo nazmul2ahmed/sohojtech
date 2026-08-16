@@ -549,11 +549,13 @@ function buildAiInsightSummaryPayload(state) {
   const m = computeDashboardMetrics(state);
   const thisMonth = getMonthRangeOffset(0);
   const lastMonth = getMonthRangeOffset(-1);
+  const expiryAlertDays = state.expiryAlertDays || 90;
   return {
     outOfStockCount: m.outStock.length,
     lowStockCount: m.lowStock.length,
-    expiredMedicineCount: m.expiredItems.length, // ✅ নতুন — আগে negative daysLeft বাদ পড়ে যেত
+    expiredMedicineCount: m.expiredItems.length, // ✅ আগে negative daysLeft বাদ পড়ে যেত
     expiringSoonCount: m.expiryAlerts.filter(x => x.daysLeft >= 0 && x.daysLeft <= 30).length,
+    expiringMediumCount: m.expiryAlerts.filter(x => x.daysLeft > 30 && x.daysLeft <= expiryAlertDays).length, // ✅ নতুন
     totalCustomerDue: m.totalCustDue,
     dueCustomerCount: m.dueCustomers.length,
     todayNetProfit: m.netProfit,
