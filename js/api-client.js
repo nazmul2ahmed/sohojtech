@@ -224,7 +224,11 @@ async function apiAddSupplier(data, opts = {}) {
       return { success: false, message: '"' + data.id + '" ইতোমধ্যে আছে।' };
     }
     await withTimeout(
-      ref.set({ id: data.id, name: data.name || '', phone: data.phone || '', address: data.address || '', totalPayable: 0, totalPaid: 0 }),
+      ref.set({
+        id: data.id, name: data.name || '', phone: data.phone || '', address: data.address || '',
+        supplierCategory: data.supplierCategory || '', manufacturerNames: data.manufacturerNames || [], // ✅ ধাপ ৩৩.১
+        totalPayable: 0, totalPaid: 0,
+      }),
       FIRESTORE_WRITE_TIMEOUT_MS
     );
     return { success: true, message: '"' + data.name + '" যোগ হয়েছে।' };
@@ -244,8 +248,47 @@ async function apiUpdateSupplier(supId, data) {
     if (data.name !== undefined) f.name = data.name;
     if (data.phone !== undefined) f.phone = data.phone;
     if (data.address !== undefined) f.address = data.address;
+    if (data.supplierCategory !== undefined) f.supplierCategory = data.supplierCategory; // ✅ ধাপ ৩৩.১
+    if (data.manufacturerNames !== undefined) f.manufacturerNames = data.manufacturerNames;
     await userCol('suppliers').doc(supId).update(f);
     return { success: true, message: 'সরবরাহকারী আপডেট হয়েছে।' };
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
+}
+
+// ────────────────────────────────────────────────────────────
+// ✅ ধাপ ৩৩.১ — SUPPLIER REPRESENTATIVES (subcollection CRUD)
+// অনলাইন-অনলি (medicine/customer-এর মতো offline-queue এখানে যোগ করা
+// হয়নি — কম-ফ্রিকোয়েন্সি, সেটআপ-টাইম অপারেশন, POS/Purchase-এর মতো
+// দৈনন্দিন-জরুরি না)
+// ────────────────────────────────────────────────────────────
+function repCol(supId) {
+  return userCol('suppliers').doc(supId).collection('representatives');
+}
+
+async function apiGetRepresentatives(supId) {
+  try {
+    const snap = await repCol(supId).get();
+    return { success: true, representatives: snap.docs.map(d => d.data()) };
+  } catch (err) { return { success: false, message: humanizeError(err), representatives: [] }; }
+}
+
+async function apiAddRepresentative(supId, data) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    const id = 'REP-' + Date.now();
+    await repCol(supId).doc(id).set({
+      id, name: data.name || '', phone: data.phone || '', groups: data.groups || [],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    return { success: true, repId: id };
+  } catch (err) { return { success: false, message: humanizeError(err) }; }
+}
+
+async function apiDeleteRepresentative(supId, repId) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    await repCol(supId).doc(repId).delete();
+    return { success: true };
   } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
 
