@@ -130,12 +130,12 @@ function computeSmartSuggestions(state) {
 
   const outStock = state.inventory.filter(m => m.status === 'out');
   if (outStock.length > 0) {
-    suggestions.push({ icon: 'fa-ban', color: 'red', text: `${outStock.length} টি ওষুধ স্টকশূন্য — দ্রুত ক্রয় এন্ট্রি করুন।` });
+    suggestions.push({ icon: 'fa-ban', color: 'red', text: `${outStock.length} টি ওষুধ স্টকশূন্য — দ্রুত ক্রয় এন্ট্রি করুন।`, action: 'reorderList' });
   }
 
   const lowStock = state.inventory.filter(m => m.status === 'low');
   if (lowStock.length > 0) {
-    suggestions.push({ icon: 'fa-box-open', color: 'amber', text: `${lowStock.length} টি ওষুধের স্টক কমে যাচ্ছে — রি-অর্ডার করার কথা ভাবুন।` });
+    suggestions.push({ icon: 'fa-box-open', color: 'amber', text: `${lowStock.length} টি ওষুধের স্টক কমে যাচ্ছে — রি-অর্ডার করার কথা ভাবুন।`, action: 'reorderList' });
   }
 
   // ✅ ধাপ ৩৫.১ — তিন-স্তর: expired (<0, এখন আলাদা লাল ব্যানারে দেখানো হয়, এখানে
@@ -197,7 +197,8 @@ function renderSmartSuggestionsCard(suggestions) {
         ${suggestions.map(s => `
           <div class="flex items-start gap-3 px-3 py-2.5 rounded-lg border ${colorMap[s.color]}">
             <i class="fa-solid ${s.icon} mt-0.5"></i>
-            <span class="text-sm">${s.text}</span>
+            <span class="text-sm flex-1">${s.text}</span>
+            ${s.action === 'reorderList' ? `<button onclick="openReorderQuickListModal()" class="text-xs font-semibold underline whitespace-nowrap flex-shrink-0">তালিকা দেখুন</button>` : ''}
           </div>`).join('')}
       </div>
     </div>`;
