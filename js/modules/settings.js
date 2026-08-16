@@ -38,6 +38,11 @@ function renderSettingsModule() {
             <input type="number" id="set-lowstock" value="${APP_STATE.lowStockLevel}" min="1" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
             <p class="text-[11px] text-slate-400 mt-1">যেসব ওষুধের নিজস্ব রি-অর্ডার লেভেল নেই, তাদের জন্য এই সীমা প্রযোজ্য হবে।</p>
           </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">মেয়াদ-সতর্কতা সীমা (দিন)</label>
+            <input type="number" id="set-expiry-days" value="${APP_STATE.expiryAlertDays}" min="30" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+            <p class="text-[11px] text-slate-400 mt-1">এর মধ্যে মেয়াদ শেষ হবে এমন ওষুধ Dashboard-এ সতর্কতা হিসেবে দেখাবে (যেমন ৬ মাস আগাম দেখতে ১৮০ বসান)। ৩০ দিনের কমে সেট করা যাবে না — এটা জরুরি-সতর্কতার নূন্যতম সীমা।</p>
+          </div>
         </div>
         <button id="settings-save-btn" onclick="saveSettingsForm()" class="btn btn-primary btn-block mt-4">
           <i class="fa-solid fa-floppy-disk mr-1"></i> সংরক্ষণ করুন
@@ -364,6 +369,7 @@ async function saveSettingsForm() {
     phone: document.getElementById('set-phone').value.trim(),
     address: document.getElementById('set-address').value.trim(),
     lowStockLevel: parseInt(document.getElementById('set-lowstock').value) || 10,
+    expiryAlertDays: Math.max(30, parseInt(document.getElementById('set-expiry-days').value) || 90),
   };
 
   const btn = document.getElementById('settings-save-btn');
