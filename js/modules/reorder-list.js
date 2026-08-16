@@ -140,6 +140,7 @@ function renderReorderListBody(supplierGroups, unassigned, repDataMap) {
     : renderReorderListEmpty() || '';
 
   wireReorderCopyButtons();
+  wireReorderSendToPurchaseButtons(); // ✅ নতুন
 }
 
 // ────────────────────────────────────────────────────────────
@@ -153,6 +154,7 @@ function renderSupplierGroupBlock(g, reps) {
       phone: rep?.phone || g.supplier.phone || '',
       meds,
       groupKey: `sup-${g.supplierId}-rep-${repId}`,
+      supplierId: g.supplierId,
     });
   }).join('');
 
@@ -161,6 +163,7 @@ function renderSupplierGroupBlock(g, reps) {
     phone: g.supplier.phone || '',
     meds: g.noRepMeds,
     groupKey: `sup-${g.supplierId}-norep`,
+    supplierId: g.supplierId,
   }) : '';
 
   return repBlocks + noRepBlock;
@@ -190,10 +193,19 @@ function renderUnassignedBlock(meds) {
 // ────────────────────────────────────────────────────────────
 // RENDER — একটা গ্রুপ কার্ড (সরবরাহকারী/প্রতিনিধি হেডার + মেডিসিন-তালিকা + কপি বাটন)
 // ────────────────────────────────────────────────────────────
-function renderMedGroupCard({ title, phone, meds, groupKey }) {
+function renderMedGroupCard({ title, phone, meds, groupKey, supplierId }) {
+  // ✅ ফিক্স: DOM থেকে টেক্সট parse করা ভঙ্গুর — badge/স্প্যানের টেক্সট মিশে যেতে
+  // পারত। তাই কপি ও ক্রয়ে-পাঠান দুটোই বাটনের data-attribute-এ esc() করা
+  // JSON রেখে সরাসরি ডেটা থেকে কাজ করে।
   const medsJson = esc(JSON.stringify(meds.map(m => ({
-    brand: m.brand, doseForm: m.doseForm, strength: m.strength, status: m.status, totalStock: m.totalStock,
+    medId: m.medId, brand: m.brand, doseForm: m.doseForm, strength: m.strength, status: m.status, totalStock: m.totalStock,
   }))));
+  const sendToPurchaseBtn = supplierId ? `
+        <button type="button" class="reorder-send-purchase-btn text-emerald-600 text-xs font-semibold hover:underline whitespace-nowrap"
+          data-supplier-id="${esc(supplierId)}" data-meds-json="${medsJson}">
+          <i class="fa-solid fa-cart-plus mr-1"></i>ক্রয়ে পাঠান
+        </button>` : '';
+
   return `
     <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-4" data-reorder-group="${esc(groupKey)}">
       <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
@@ -201,10 +213,13 @@ function renderMedGroupCard({ title, phone, meds, groupKey }) {
           <div class="text-sm font-semibold text-slate-800 dark:text-white">${esc(title)}</div>
           ${phone ? `<div class="text-[11px] text-slate-400 font-mono">${esc(phone)}</div>` : ''}
         </div>
-        <button type="button" class="reorder-copy-btn text-brand text-xs font-semibold hover:underline whitespace-nowrap"
-          data-title="${esc(title)}" data-meds-json="${medsJson}">
-          <i class="fa-solid fa-copy mr-1"></i>কপি করুন (${meds.length} টি)
-        </button>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" class="reorder-copy-btn text-brand text-xs font-semibold hover:underline whitespace-nowrap"
+            data-title="${esc(title)}" data-meds-json="${medsJson}">
+            <i class="fa-solid fa-copy mr-1"></i>কপি করুন (${meds.length} টি)
+          </button>
+          ${sendToPurchaseBtn}
+        </div>
       </div>
       <div class="space-y-1">
         ${meds.map(m => renderReorderMedRow(m)).join('')}
@@ -238,10 +253,58 @@ function wireReorderCopyButtons() {
   document.querySelectorAll('.reorder-copy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const title = btn.dataset.title || 'রি-অর্ডার';
-      let meds = [];
-      try { meds = JSON.parse(btn.dataset.medsJson.replace(/&quot;/g, '"').replace(/&amp;/g, '&')); } catch (e) { meds = []; }
+      const meds = parseReorderMedsJson(btn.dataset.medsJson);
       const text = buildReorderMessageText(title, meds);
       copyToClipboardWithToast(text, `"${title}" রি-অর্ডার তালিকা`);
     });
   });
+}
+
+// ✅ নতুন — supplierId + medId-সহ candidate তালিকা APP_STATE.purItems-এ রূপান্তর
+// করে সরাসরি Purchase ফর্মে বসায়। কোনো Firestore write না — শুধু ফর্ম pre-fill,
+// AI-scan flow-এর (applyAiScannedItemsToPurchaseForm) মতোই human-confirmation gate
+// অক্ষত থাকে — "ক্রয় নিশ্চিত করুন" না চাপা পর্যন্ত কিছুই সংরক্ষিত হবে না।
+function wireReorderSendToPurchaseButtons() {
+  document.querySelectorAll('.reorder-send-purchase-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const supplierId = btn.dataset.supplierId;
+      const meds = parseReorderMedsJson(btn.dataset.medsJson);
+      sendReorderGroupToPurchase(supplierId, meds);
+    });
+  });
+}
+
+function parseReorderMedsJson(raw) {
+  try { return JSON.parse(String(raw || '[]').replace(/&quot;/g, '"').replace(/&amp;/g, '&')); }
+  catch (err) { return []; }
+}
+
+function sendReorderGroupToPurchase(supplierId, meds) {
+  if (!meds.length) return;
+
+  // ✅ Qty-এর একটা সাধারণ default অনুমান — বর্তমান স্টককে reorderLevel-এর
+  // দ্বিগুণ পর্যন্ত পূরণ করা। এটা শুধু starting-point, ইউজার নিজে Purchase
+  // ফর্মে যাচাই/সংশোধন করবেন — কোনো money-critical জায়গায় ব্যবহৃত হয় না।
+  const purItems = meds.map(m => {
+    const inv = APP_STATE.inventory.find(x => x.medId === m.medId);
+    const med = APP_STATE.medicines.find(x => x.id === m.medId);
+    const lastBatch = inv?.batches?.[0];
+    const reorderLevel = med?.reorderLevel || APP_STATE.lowStockLevel || 10;
+    const suggestedQty = Math.max(1, reorderLevel * 2 - (m.totalStock || 0));
+    return {
+      medId: m.medId, brand: m.brand, doseForm: m.doseForm, strength: m.strength,
+      qty: suggestedQty, purchasePrice: lastBatch?.cost || 0, mrp: lastBatch?.mrp || 0,
+      sellPrice: inv?.sellPrice || 0, expiryDate: '', discountPct: 0, discountAmt: 0,
+    };
+  });
+
+  // ✅ বিদ্যমান Purchase-ড্রাফট ফাঁকা থাকলে replace, নাহলে যোগ — AI-স্ক্যানের
+  // একই কনভেনশন (applyAiScannedItemsToPurchaseForm-এর isDraftEmpty প্যাটার্ন)
+  const isDraftEmpty = !APP_STATE.purItems || (APP_STATE.purItems.length === 1 && !APP_STATE.purItems[0].medId && !APP_STATE.purItems[0].aiScanned);
+  APP_STATE.purItems = isDraftEmpty ? purItems : APP_STATE.purItems.concat(purItems);
+  APP_STATE.purSupplierId = supplierId;
+
+  document.getElementById('reorder-list-modal')?.remove();
+  goTab('purchase'); // renderPurchaseModule() → initPurSupplierDropdown() স্বয়ংক্রিয়ভাবে supplierId pre-select করবে
+  toast(`${meds.length} টি ওষুধ ক্রয়-ফর্মে বসানো হয়েছে — পরিমাণ/দাম যাচাই করে "ক্রয় নিশ্চিত করুন" চাপুন। চাইলে "খসড়া সংরক্ষণ করুন" দিয়ে পরে চালিয়ে যেতে পারেন।`, 's');
 }
