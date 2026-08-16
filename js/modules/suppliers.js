@@ -104,6 +104,7 @@ function renderSupTable() {
           <td class="px-4 py-3 text-center whitespace-nowrap">
             ${s.totalPayable > 0 ? `<button onclick="openPayPayable('${s.id}')" class="text-emerald-600 hover:underline text-xs mr-3"><i class="fa-solid fa-money-bill-transfer mr-1"></i>পরিশোধ</button>` : ''}
             <button onclick="openSupplierHistory('${s.id}')" class="text-slate-500 hover:underline text-xs mr-3"><i class="fa-solid fa-clock-rotate-left mr-1"></i>ইতিহাস</button>
+            <button onclick="openRepresentativesModal('${s.id}')" class="text-slate-500 hover:underline text-xs mr-3"><i class="fa-solid fa-user-tie mr-1"></i>প্রতিনিধি</button>
             <button onclick="openSupplierForm('${s.id}')" class="text-brand hover:underline text-xs mr-3"><i class="fa-solid fa-pen mr-1"></i>এডিট</button>
             <button onclick="deleteSupplierConfirm('${s.id}')" class="text-red-500 hover:underline text-xs"><i class="fa-solid fa-trash mr-1"></i>মুছুন</button>
           </td>
@@ -145,6 +146,20 @@ function openSupplierForm(supId) {
           <input type="text" id="sf-address" value="${esc(sup?.address || '')}" placeholder="ঐচ্ছিক"
             class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
         </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">সাপ্লায়ার ধরন (ঐচ্ছিক)</label>
+          <select id="sf-category" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white">
+            <option value="">— নির্বাচন করুন —</option>
+            <option value="manufacturer_rep" ${sup?.supplierCategory === 'manufacturer_rep' ? 'selected' : ''}>ম্যানুফ্যাকচারার প্রতিনিধি</option>
+            <option value="wholesaler" ${sup?.supplierCategory === 'wholesaler' ? 'selected' : ''}>পাইকার (একাধিক কোম্পানি)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">ম্যানুফ্যাকচারার নাম (কমা দিয়ে আলাদা)</label>
+          <input type="text" id="sf-manufacturers" value="${esc((sup?.manufacturerNames || []).join(', '))}" placeholder="যেমন: Beximco, Square"
+            class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+          <p class="text-[11px] text-slate-400 mt-1">প্রতিনিধি হলে সাধারণত একটাই কোম্পানি, পাইকার হলে একাধিক বা খালি রাখতে পারেন — এটা শুধু গ্রুপিং/ফিল্টারের জন্য।</p>
+        </div>
       </div>
       <div class="flex gap-2">
         <button id="sup-save-btn" onclick="saveSupplier(${isEdit ? `'${supId}'` : 'null'})" class="btn btn-primary flex-1">সংরক্ষণ করুন</button>
@@ -170,6 +185,8 @@ async function saveSupplier(supId) {
   const name = document.getElementById('sf-name').value.trim();
   const phone = document.getElementById('sf-phone').value.trim();
   const address = document.getElementById('sf-address').value.trim();
+  const supplierCategory = document.getElementById('sf-category').value;
+  const manufacturerNames = document.getElementById('sf-manufacturers').value.split(',').map(s => s.trim()).filter(Boolean);
 
   if (!name) return showErr('নাম আবশ্যক।');
 
@@ -179,21 +196,21 @@ async function saveSupplier(supId) {
 
   try {
     if (isEdit) {
-      const res = await apiUpdateSupplier(supId, { name, phone, address });
+      const res = await apiUpdateSupplier(supId, { name, phone, address, supplierCategory, manufacturerNames });
       if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
       const sup = APP_STATE.suppliers.find(s => s.id === supId);
-      Object.assign(sup, { name, phone, address });
+      Object.assign(sup, { name, phone, address, supplierCategory, manufacturerNames });
       toast('সরবরাহকারী আপডেট হয়েছে।', 's');
     } else {
       const id = genSupplierId();
-      const res = await apiAddSupplier({ id, name, phone, address });
+      const res = await apiAddSupplier({ id, name, phone, address, supplierCategory, manufacturerNames });
       if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
 
       if (res.queued) {
         toast(res.message, 'w');
         refreshSyncBadge();
       } else {
-        APP_STATE.suppliers.push({ id, name, phone, address, totalPayable: 0, totalPaid: 0 });
+        APP_STATE.suppliers.push({ id, name, phone, address, supplierCategory, manufacturerNames, totalPayable: 0, totalPaid: 0 });
         toast(`"${name}" যোগ হয়েছে।`, 's');
       }
     }
@@ -452,4 +469,119 @@ function renderSupHistoryRow(e) {
         <div class="text-[10px] text-slate-400">পাওনা: ৳${fmt(e.runningPayable)}</div>
       </div>
     </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ৩৩.১: SUPPLIER REPRESENTATIVES MODAL
+// একই সাপ্লায়ার-কোম্পানির একাধিক প্রতিনিধি (ভিন্ন প্রোডাক্ট-গ্রুপ নিয়ে
+// কাজ করেন) আলাদাভাবে যোগ/মুছার জন্য। ধাপ ৩৩.৩-এ Reorder Quick-List
+// প্যানেল এই ডেটা ব্যবহার করবে (medicine.preferredRepId → এই রেকর্ড)।
+// ════════════════════════════════════════════════════════════
+let _repCache = []; // সর্বশেষ লোড করা প্রতিনিধি তালিকা — delete/render-এ রেফারেন্সের জন্য
+
+function openRepresentativesModal(supId) {
+  const sup = APP_STATE.suppliers.find(s => s.id === supId);
+  if (!sup) return;
+  document.getElementById('rep-modal')?.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'rep-modal';
+  modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-user-tie text-brand mr-1"></i> প্রতিনিধি — ${esc(sup.name)}</h4>
+      <p class="text-xs text-slate-400 mb-4">একই সাপ্লায়ার-কোম্পানির একাধিক প্রতিনিধি (বিভিন্ন প্রোডাক্ট-গ্রুপ নিয়ে কাজ করেন এমন) এখানে যোগ করুন।</p>
+      <div id="rep-list" class="space-y-2 mb-4">
+        <div class="text-center text-xs text-slate-400 py-4"><i class="fa-solid fa-spinner fa-spin mr-1"></i>লোড হচ্ছে...</div>
+      </div>
+      <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
+        <h5 class="text-xs font-semibold text-slate-500 uppercase mb-2">নতুন প্রতিনিধি যোগ করুন</h5>
+        <div id="rep-form-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
+        <div class="space-y-2 mb-3">
+          <input type="text" id="rep-name" placeholder="প্রতিনিধির নাম"
+            class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+          <input type="text" id="rep-phone" placeholder="ফোন"
+            class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+          <input type="text" id="rep-groups" placeholder="প্রোডাক্ট-গ্রুপ (কমা দিয়ে, ঐচ্ছিক) — যেমন: কার্ডিয়াক, অ্যান্টিবায়োটিক"
+            class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
+        </div>
+        <button id="rep-add-btn" onclick="submitAddRepresentative('${supId}')" class="btn btn-primary btn-block btn-sm">যোগ করুন</button>
+      </div>
+      <button onclick="document.getElementById('rep-modal').remove()" class="btn btn-secondary btn-block mt-4">বন্ধ করুন</button>
+    </div>`;
+  document.body.appendChild(modal);
+  openAppModal('rep-modal', () => document.getElementById('rep-modal')?.remove());
+  loadAndRenderRepresentatives(supId);
+}
+
+async function loadAndRenderRepresentatives(supId) {
+  const box = document.getElementById('rep-list');
+  if (!box) return;
+  const res = await apiGetRepresentatives(supId);
+  if (!document.getElementById('rep-list')) return; // মডাল বন্ধ হয়ে গেলে safe no-op
+  if (!res.success) {
+    box.innerHTML = `<div class="text-center text-xs text-red-500 py-4">লোড ব্যর্থ: ${esc(res.message)}</div>`;
+    return;
+  }
+  _repCache = res.representatives;
+  renderRepresentativesList(supId);
+}
+
+function renderRepresentativesList(supId) {
+  const box = document.getElementById('rep-list');
+  if (!box) return;
+  if (!_repCache.length) {
+    box.innerHTML = `<div class="text-center text-xs text-slate-400 py-4">এখনো কোনো প্রতিনিধি যোগ করা হয়নি।</div>`;
+    return;
+  }
+  box.innerHTML = _repCache.map(r => `
+    <div class="flex items-center justify-between gap-2 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold text-slate-800 dark:text-white truncate">${esc(r.name)}</div>
+        <div class="text-[11px] text-slate-400 truncate">${esc(r.phone || '—')}${(r.groups && r.groups.length) ? ' • ' + esc(r.groups.join(', ')) : ''}</div>
+      </div>
+      <button onclick="deleteRepresentativeConfirm('${supId}','${esc(r.id)}')" class="text-red-400 hover:text-red-600 flex-shrink-0"><i class="fa-solid fa-trash text-xs"></i></button>
+    </div>`).join('');
+}
+
+async function submitAddRepresentative(supId) {
+  if (guardReadOnly()) return;
+  const errEl = document.getElementById('rep-form-error');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('rep-name').value.trim();
+  const phone = document.getElementById('rep-phone').value.trim();
+  const groups = document.getElementById('rep-groups').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!name) { errEl.textContent = 'নাম আবশ্যক।'; errEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('rep-add-btn');
+  btn.disabled = true;
+  btn.textContent = 'যোগ হচ্ছে...';
+  try {
+    const res = await apiAddRepresentative(supId, { name, phone, groups });
+    if (!res.success) { errEl.textContent = res.message; errEl.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'যোগ করুন'; return; }
+    document.getElementById('rep-name').value = '';
+    document.getElementById('rep-phone').value = '';
+    document.getElementById('rep-groups').value = '';
+    toast('প্রতিনিধি যোগ হয়েছে।', 's');
+    await loadAndRenderRepresentatives(supId);
+  } catch (err) {
+    errEl.textContent = humanizeError(err);
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'যোগ করুন';
+  }
+}
+
+async function deleteRepresentativeConfirm(supId, repId) {
+  if (guardReadOnly()) return;
+  if (!confirm('এই প্রতিনিধি মুছে ফেলতে চান?')) return;
+  try {
+    const res = await apiDeleteRepresentative(supId, repId);
+    if (!res.success) return toast(res.message, 'w');
+    toast('প্রতিনিধি মুছে ফেলা হয়েছে।', 's');
+    await loadAndRenderRepresentatives(supId);
+  } catch (err) {
+    showFatalError('প্রতিনিধি মুছতে সমস্যা:\n' + humanizeError(err), err);
+  }
 }
