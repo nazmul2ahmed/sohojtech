@@ -253,7 +253,7 @@ function renderExpiredMedicineBanner(expiredItems) {
                   <span class="font-semibold text-slate-800 dark:text-white text-sm">${esc(x.brand)}</span>
                   <span class="text-[11px] text-red-500 ml-2">মেয়াদ শেষ হয়েছে ${Math.abs(x.daysLeft)} দিন আগে</span>
                 </div>
-                <button onclick="goToReturnForExpiredMedicine()" class="text-xs font-semibold text-brand hover:underline whitespace-nowrap flex-shrink-0">
+                <button onclick="goToReturnForExpiredMedicine('${esc(x.medId)}','${esc((x.batches && x.batches[0] && x.batches[0].batchId) || '')}')" class="text-xs font-semibold text-brand hover:underline whitespace-nowrap flex-shrink-0">
                   <i class="fa-solid fa-rotate-left mr-1"></i>রিটার্ন/রাইট-অফ
                 </button>
               </div>`).join('')}
@@ -263,13 +263,68 @@ function renderExpiredMedicineBanner(expiredItems) {
     </div>`;
 }
 
-// ⚠️ Phase ১ — শুধু Returns ট্যাবের সাপ্লায়ার-সাব-ট্যাবে নিয়ে যায়, নির্দিষ্ট
-// purchase/batch প্রি-সিলেক্ট করে না। পরের ধাপে batchId→purchase reverse-lookup
-// দিয়ে স্মার্ট prefill যোগ হবে।
-function goToReturnForExpiredMedicine() {
+// ✅ ধাপ (batchId→purchase reverse-lookup) — এই batchId ঠিক কোন purchase-এর
+// কোন item-এ যোগ হয়েছিল সেটা খুঁজে বের করে (purchase.js-এর apiSubmitPurchase()-এ
+// item.batchId = newBatch.batchId হিসেবে সংরক্ষিত থাকে বলে সম্ভব)।
+function findPurchaseForBatch(medId, batchId) {
+  if (!batchId) return null;
+  for (const pur of APP_STATE.purchases) {
+    const item = (pur.items || []).find(i => i.medId === medId && i.batchId === batchId);
+    if (item) return { purchase: pur, item };
+  }
+  return null;
+}
+
+function goToReturnForExpiredMedicine(medId, batchId) {
+  const found = findPurchaseForBatch(medId, batchId);
   goTab('returns');
-  setTimeout(() => { if (typeof setRetMode === 'function') setRetMode('supplier'); }, 100);
-  toast('উপরে থেকে সংশ্লিষ্ট ক্রয় (Purchase) খুঁজে বের করে রিটার্ন/রাইট-অফ করুন — স্বয়ংক্রিয় প্রি-ফিল পরের ধাপে আসছে।', 'w');
+  if (typeof setRetMode === 'function') setRetMode('supplier');
+
+  if (!found) {
+    // ⚠️ fallback — পুরনো/Opening Balance থেকে আসা ব্যাচ যার কোনো purchase-রেকর্ড
+    // নেই। এখানে silent guess করা হচ্ছে না — ইউজারকে স্পষ্টভাবে জানিয়ে ম্যানুয়াল
+    // পথে পাঠানো হচ্ছে, patient-safety ডেটার ক্ষেত্রে ভুল auto-selection বিপজ্জনক।
+    toast('এই ব্যাচের সাথে মিলে এমন কোনো ক্রয়-রেকর্ড পাওয়া যায়নি (সম্ভবত Opening Balance থেকে যোগ হয়েছিল) — উপর থেকে ম্যানুয়ালি ক্রয় বেছে রিটার্ন/রাইট-অফ করুন।', 'w');
+    return;
+  }
+
+  prefillSupplierReturnForExpiredBatch(found.purchase.purchaseId, medId, batchId);
+}
+
+function prefillSupplierReturnForExpiredBatch(purId, medId, batchId) {
+  const pur = APP_STATE.purchases.find(p => p.purchaseId === purId);
+  if (!pur) return;
+
+  // sd-ret-purchase dropdown সিলেক্ট করা — এটা onRetPurchaseSelect(purId) ট্রিগার
+  // করে (returns.js-এর createSD onChange), যেটা সিঙ্ক্রোনাসভাবে item-row গুলো রেন্ডার করে
+  sdSelect('sd-ret-purchase', purId, purId + ' — ' + pur.supplierName);
+
+  const idx = (pur.items || []).findIndex(i => i.medId === medId && i.batchId === batchId);
+  if (idx === -1) {
+    toast('ক্রয়টি খুঁজে পাওয়া গেছে কিন্তু নির্দিষ্ট আইটেম-লাইন মেলাতে সমস্যা হয়েছে — ম্যানুয়ালি পরিমাণ দিন।', 'w');
+    return;
+  }
+  const item = pur.items[idx];
+
+  // ✅ qty ইনপুটের max attribute (onRetPurchaseSelect() ইতিমধ্যে সঠিক
+  // batch-specific সীমা হিসাব করে বসিয়েছে — সেটাই পুনর্ব্যবহার করা হচ্ছে,
+  // নিজে থেকে আলাদা করে recompute করে ড্রিফট এড়ানো হলো) দিয়ে পুরো available qty বসানো
+  const qtyInput = document.getElementById(`ret-s-qty-${idx}`);
+  if (qtyInput) {
+    const maxAttr = qtyInput.getAttribute('max');
+    qtyInput.value = (maxAttr && parseInt(maxAttr, 10) > 0) ? maxAttr : item.qty;
+  }
+
+  // মেয়াদোত্তীর্ণ আইটেম বলে ডিফল্ট কারণ "ধ্বংস" (write-off) — সাপ্লায়ার ফেরত
+  // নিলে ইউজার নিজে বদলে নিতে পারবেন
+  const writeOffRadio = document.querySelector('input[name="ret-s-reason"][value="ধ্বংস"]');
+  if (writeOffRadio) {
+    writeOffRadio.checked = true;
+    if (typeof toggleRetSupReasonUI === 'function') toggleRetSupReasonUI();
+  }
+
+  if (typeof calcRetSupTotal === 'function') calcRetSupTotal();
+  toast(`"${item.brand}" প্রি-ফিল করা হয়েছে — পরিমাণ/কারণ যাচাই করে "রিটার্ন/রাইট-অফ নিশ্চিত করুন" চাপুন।`, 's');
 }
 
 function renderDashboardModule() {
