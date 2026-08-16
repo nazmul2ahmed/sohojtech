@@ -47,6 +47,9 @@ async function apiAddMedicine(data, opts = {}) {
       id, brand: data.brand || '', generic: data.generic || '', doseForm: data.doseForm || '',
       strength: data.strength || '', manufacturer: data.manufacturer || '', category: data.category || '',
       unit: data.unit || 'পাতা', reorderLevel: parseInt(data.reorderLevel) || 10,
+      // ✅ ধাপ ৩৩.২ — পছন্দের সরবরাহকারী/প্রতিনিধি, ঐচ্ছিক
+      preferredSupplierId: data.preferredSupplierId || '',
+      preferredRepId: data.preferredRepId || '',
     });
     batch.set(invRef, {
       medId: id, brand: data.brand || '', doseForm: data.doseForm || '', strength: data.strength || '',
@@ -76,6 +79,9 @@ async function apiUpdateMedicine(medId, data) {
     if (data.category !== undefined) f.category = data.category;
     if (data.unit !== undefined) f.unit = data.unit;
     if (data.reorderLevel !== undefined) f.reorderLevel = parseInt(data.reorderLevel) || 10;
+    // ✅ ধাপ ৩৩.২
+    if (data.preferredSupplierId !== undefined) f.preferredSupplierId = data.preferredSupplierId;
+    if (data.preferredRepId !== undefined) f.preferredRepId = data.preferredRepId;
     await userCol('medicines').doc(medId).update(f);
     return { success: true, message: 'ওষুধ আপডেট হয়েছে।' };
   } catch (err) { return { success: false, message: humanizeError(err) }; }
