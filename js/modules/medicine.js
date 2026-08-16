@@ -191,6 +191,15 @@ function openMedicineForm(medId) {
           <input type="number" id="mf-reorder" value="${med?.reorderLevel ?? 10}" min="0"
             class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white"/>
         </div>
+
+        <!-- ✅ ধাপ ৩৩.২: পছন্দের সরবরাহকারী/প্রতিনিধি — Reorder Quick-List (৩৩.৩) এই ফিল্ড দিয়ে গ্রুপ করবে -->
+        <div class="col-span-2 border-t border-slate-100 dark:border-slate-700 pt-3 mt-1">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">পছন্দের সরবরাহকারী (ঐচ্ছিক)</label>
+          <div id="sd-mf-supplier" class="mb-1"></div>
+          <p class="text-[11px] text-slate-400 mb-3">রি-অর্ডার তালিকায় এই ওষুধ এই সরবরাহকারীর গ্রুপে দেখানো হবে — না দিলে "সাপ্লায়ার নির্ধারিত নেই" বিভাগে থাকবে।</p>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">প্রতিনিধি (ঐচ্ছিক)</label>
+          <div id="sd-mf-rep" class="mb-1"></div>
+        </div>
       </div>
       <div class="flex gap-2">
         <button id="med-save-btn" onclick="saveMedicine(${isEdit ? `'${medId}'` : 'null'})" class="btn btn-primary flex-1">সংরক্ষণ করুন</button>
@@ -199,11 +208,76 @@ function openMedicineForm(medId) {
     </div>`;
   document.body.appendChild(modal);
   openAppModal('medicine-form-modal', closeMedicineForm);
+  initMfSupplierRepDropdowns(med);
   document.getElementById('mf-brand').focus();
 }
 
 function closeMedicineForm() {
   document.getElementById('medicine-form-modal')?.remove();
+  APP_STATE.mfSelectedSupplierId = null;
+  APP_STATE.mfSelectedRepId = null;
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ ধাপ ৩৩.২ — MEDICINE FORM: SUPPLIER/REPRESENTATIVE DROPDOWNS
+// সরবরাহকারী নির্বাচনের পর সেই সরবরাহকারীর representatives (৩৩.১)
+// dynamically apiGetRepresentatives() দিয়ে লোড হয়। edit-মোডে medicine-এর
+// বিদ্যমান preferredSupplierId/preferredRepId pre-select হয়ে যায়।
+// ════════════════════════════════════════════════════════════
+function initMfSupplierRepDropdowns(med) {
+  APP_STATE.mfSelectedSupplierId = med?.preferredSupplierId || null;
+  APP_STATE.mfSelectedRepId = med?.preferredRepId || null;
+
+  const supOpts = APP_STATE.suppliers.map(s => ({ value: s.id, label: s.name, sub: s.phone || '' }));
+  createSD('sd-mf-supplier', supOpts, onMfSupplierChange, '— সরবরাহকারী খুঁজুন (ঐচ্ছিক) —');
+
+  const preselectedSup = APP_STATE.mfSelectedSupplierId
+    ? APP_STATE.suppliers.find(s => s.id === APP_STATE.mfSelectedSupplierId)
+    : null;
+
+  if (preselectedSup) {
+    sdSelect('sd-mf-supplier', preselectedSup.id, preselectedSup.name);
+    loadMfRepDropdown(preselectedSup.id, APP_STATE.mfSelectedRepId);
+  } else {
+    APP_STATE.mfSelectedSupplierId = null; // সরবরাহকারী মুছে ফেলা হয়ে থাকলে stale reference পরিষ্কার
+    renderMfRepPlaceholder();
+  }
+}
+
+function renderMfRepPlaceholder() {
+  const box = document.getElementById('sd-mf-rep');
+  if (!box) return;
+  box.innerHTML = `<div class="text-xs text-slate-400 px-3 py-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg">আগে সরবরাহকারী নির্বাচন করুন</div>`;
+}
+
+function onMfSupplierChange(supId) {
+  APP_STATE.mfSelectedSupplierId = supId || null;
+  APP_STATE.mfSelectedRepId = null; // ✅ সরবরাহকারী বদলালে আগের প্রতিনিধি-সিলেকশন আর প্রাসঙ্গিক না
+  if (!supId) { renderMfRepPlaceholder(); return; }
+  loadMfRepDropdown(supId, null);
+}
+
+async function loadMfRepDropdown(supId, preselectRepId) {
+  const box = document.getElementById('sd-mf-rep');
+  if (!box) return;
+  box.innerHTML = `<div class="text-xs text-slate-400 px-3 py-2"><i class="fa-solid fa-spinner fa-spin mr-1"></i>প্রতিনিধি লোড হচ্ছে...</div>`;
+
+  const res = await apiGetRepresentatives(supId);
+  if (!document.getElementById('sd-mf-rep')) return; // মডাল ততক্ষণে বন্ধ হয়ে গেলে safe no-op
+
+  if (!res.success || !res.representatives.length) {
+    box.innerHTML = `<div class="text-xs text-slate-400 px-3 py-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg">এই সরবরাহকারীর কোনো প্রতিনিধি নেই — সরাসরি সরবরাহকারীর মূল ফোন ব্যবহৃত হবে</div>`;
+    return;
+  }
+
+  const repOpts = res.representatives.map(r => ({ value: r.id, label: r.name, sub: r.phone || '' }));
+  createSD('sd-mf-rep', repOpts, (v) => { APP_STATE.mfSelectedRepId = v || null; }, '— প্রতিনিধি নির্বাচন করুন (ঐচ্ছিক) —');
+
+  if (preselectRepId) {
+    const matched = res.representatives.find(r => r.id === preselectRepId);
+    if (matched) sdSelect('sd-mf-rep', matched.id, matched.name);
+    else APP_STATE.mfSelectedRepId = null; // প্রতিনিধি মুছে ফেলা হয়ে থাকলে stale reference পরিষ্কার
+  }
 }
 
 // ✅ async — Firestore কল শেষ না হওয়া পর্যন্ত বাটন disabled থাকবে (ডাবল-সাবমিট রোধ)
@@ -222,6 +296,9 @@ async function saveMedicine(medId) {
   const category = document.getElementById('mf-category').value.trim();
   const unit = document.getElementById('mf-unit').value;
   const reorderLevel = parseInt(document.getElementById('mf-reorder').value) || 0;
+  // ✅ ধাপ ৩৩.২ — dropdown-এর মাধ্যমে বাছাই করা মান (ঐচ্ছিক, ফাঁকাও হতে পারে)
+  const preferredSupplierId = APP_STATE.mfSelectedSupplierId || '';
+  const preferredRepId = APP_STATE.mfSelectedRepId || '';
 
   if (!brand) return showErr('Brand Name আবশ্যক।');
   if (!isEnglishBrand(brand)) return showErr('Brand Name অবশ্যই ইংরেজি অক্ষরে লিখতে হবে (বাংলায় নয়)।');
@@ -236,19 +313,19 @@ async function saveMedicine(medId) {
 
   try {
     if (isEdit) {
-      const res = await apiUpdateMedicine(medId, { brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel });
+      const res = await apiUpdateMedicine(medId, { brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel, preferredSupplierId, preferredRepId });
       if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
 
       await apiUpdateInventoryFields(medId, { brand, doseForm, strength });
 
       const med = APP_STATE.medicines.find(m => m.id === medId);
-      Object.assign(med, { brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel });
+      Object.assign(med, { brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel, preferredSupplierId, preferredRepId });
       const inv = APP_STATE.inventory.find(i => i.medId === medId);
       if (inv) { inv.brand = brand; inv.doseForm = doseForm; inv.strength = strength; }
       toast('ওষুধ আপডেট হয়েছে।', 's');
     } else {
       const id = genMedicineId(brand);
-      const res = await apiAddMedicine({ id, brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel });
+      const res = await apiAddMedicine({ id, brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel, preferredSupplierId, preferredRepId });
       if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'সংরক্ষণ করুন'; return; }
 
       if (res.queued) {
@@ -257,7 +334,7 @@ async function saveMedicine(medId) {
         refreshSyncBadge();
       } else {
         const invRow = { medId: id, brand, doseForm, strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] };
-        APP_STATE.medicines.push({ id, brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel });
+        APP_STATE.medicines.push({ id, brand, generic, doseForm, strength, manufacturer, category, unit, reorderLevel, preferredSupplierId, preferredRepId });
         APP_STATE.inventory.push(invRow);
         toast(`"${brand}" যোগ হয়েছে। এখন Purchase থেকে স্টক যোগ করুন।`, 's');
       }
